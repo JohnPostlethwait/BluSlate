@@ -1,0 +1,33 @@
+appId: com.mediafetch.app
+productName: MediaFetch
+directories:
+  buildResources: resources
+  output: release
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.*'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+mac:
+  target:
+    - dmg
+    - zip
+  artifactName: '${name}-${version}-${arch}.${ext}'
+  entitlementsInherit: resources/entitlements.mac.plist
+win:
+  target:
+    - nsis
+  artifactName: '${name}-${version}-setup.${ext}'
+nsis:
+  artifactName: '${name}-${version}-setup.${ext}'
+  shortcutName: MediaFetch
+  uninstallDisplayName: MediaFetch
+  createDesktopShortcut: always
+linux:
+  target:
+    - AppImage
+    - deb
+  artifactName: '${name}-${version}-${arch}.${ext}'
+  maintainer: mediafetch
+  category: Utility

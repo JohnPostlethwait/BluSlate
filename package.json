@@ -26,6 +26,9 @@
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "esbuild"]
+  },
   "devDependencies": {
     "@types/node": "^25.2.1",
     "tsup": "^8.5.1",

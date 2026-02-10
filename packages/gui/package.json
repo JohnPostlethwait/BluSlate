@@ -1,0 +1,33 @@
+{
+  "name": "@mediafetch/gui",
+  "version": "0.1.0",
+  "description": "Desktop GUI for MediaFetch — rename TV show and movie files using TMDb metadata",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-builder --config electron-builder.yml"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@mediafetch/core": "workspace:*",
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@types/node": "^25.2.1",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^3.0.0",
+    "svelte": "^5.28.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0"
+  }
+}
