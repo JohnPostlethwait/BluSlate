@@ -1,14 +1,25 @@
 <script lang="ts">
   interface Props {
     onstart: (event: { directory: string; apiKey: string; recursive: boolean; dryRun: boolean }) => void;
+    initialDirectory?: string;
+    initialApiKey?: string;
   }
 
-  let { onstart }: Props = $props();
+  let { onstart, initialDirectory = '', initialApiKey = '' }: Props = $props();
 
   let directory = $state('');
   let apiKey = $state('');
   let recursive = $state(false);
   let dryRun = $state(false);
+  let isDragOver = $state(false);
+
+  // Sync with initial values when they load asynchronously (e.g. from saved settings)
+  $effect(() => {
+    if (initialDirectory && !directory) directory = initialDirectory;
+  });
+  $effect(() => {
+    if (initialApiKey && !apiKey) apiKey = initialApiKey;
+  });
 
   async function handleBrowse() {
     const selected = await window.api.selectDirectory();
@@ -21,9 +32,47 @@
     if (!directory || !apiKey) return;
     onstart({ directory, apiKey, recursive, dryRun });
   }
+
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+    isDragOver = true;
+  }
+
+  function handleDragLeave(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    isDragOver = false;
+  }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    isDragOver = false;
+
+    if (!e.dataTransfer?.files?.length) return;
+
+    // Get the first dropped item's path
+    const file = e.dataTransfer.files[0];
+    const path = (file as File & { path?: string }).path;
+    if (path) {
+      directory = path;
+    }
+  }
 </script>
 
-<div class="picker">
+<div
+  class="picker"
+  class:drag-over={isDragOver}
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={handleDrop}
+  role="region"
+  aria-label="Media directory picker"
+>
   <div class="field">
     <label for="directory">Media Directory</label>
     <div class="input-row">
@@ -31,11 +80,14 @@
         id="directory"
         type="text"
         bind:value={directory}
-        placeholder="/path/to/media/files"
+        placeholder="Drop a folder here or click Browse"
         class="input-text"
       />
       <button class="btn-browse" onclick={handleBrowse}>Browse</button>
     </div>
+    {#if !directory}
+      <p class="drop-hint">Drag & drop a folder anywhere on this panel</p>
+    {/if}
   </div>
 
   <div class="field">
@@ -77,7 +129,13 @@
     background: #16213e;
     border-radius: 12px;
     padding: 32px;
-    border: 1px solid #2a2a4a;
+    border: 2px solid #2a2a4a;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .picker.drag-over {
+    border-color: #00d4ff;
+    background: #1a2a4a;
   }
 
   .field {
@@ -127,6 +185,13 @@
 
   .btn-browse:hover {
     background: #3a3a5a;
+  }
+
+  .drop-hint {
+    margin: 6px 0 0;
+    font-size: 0.8rem;
+    color: #555;
+    font-style: italic;
   }
 
   .help-link {

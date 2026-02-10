@@ -1,13 +1,21 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import { join } from 'node:path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { runPipeline, buildConfig } from '@mediafetch/core';
 import { createGuiAdapter } from './gui-adapter.js';
+import { loadSettings, saveSettings, addRecentDirectory } from './settings.js';
+import type { AppSettings } from './settings.js';
+
+let currentSettings: AppSettings = { recentDirectories: [] };
 
 function createWindow(): BrowserWindow {
+  // Restore saved window bounds
+  const bounds = currentSettings.windowBounds;
   const mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 750,
+    width: bounds?.width ?? 1100,
+    height: bounds?.height ?? 750,
+    x: bounds?.x,
+    y: bounds?.y,
     minWidth: 800,
     minHeight: 600,
     show: false,
@@ -21,6 +29,17 @@ function createWindow(): BrowserWindow {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
   });
+
+  // Save window bounds on resize/move
+  const saveBounds = (): void => {
+    if (!mainWindow.isMinimized() && !mainWindow.isMaximized()) {
+      const b = mainWindow.getBounds();
+      currentSettings.windowBounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+      saveSettings(currentSettings).catch(() => {});
+    }
+  };
+  mainWindow.on('resized', saveBounds);
+  mainWindow.on('moved', saveBounds);
 
   // Open external links in the system browser
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -38,7 +57,10 @@ function createWindow(): BrowserWindow {
   return mainWindow;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Load saved settings before creating the window
+  currentSettings = await loadSettings();
+
   // Set app user model ID for Windows notifications
   electronApp.setAppUserModelId('com.mediafetch.app');
 
@@ -48,6 +70,87 @@ app.whenReady().then(() => {
   });
 
   const mainWindow = createWindow();
+
+  // --- App Menu ---
+  const isMac = process.platform === 'darwin';
+  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Directory...',
+          accelerator: 'CmdOrCtrl+O',
+          click: async (): Promise<void> => {
+            const result = await dialog.showOpenDialog(mainWindow, {
+              properties: ['openDirectory'],
+              title: 'Select media directory',
+            });
+            if (!result.canceled && result.filePaths.length > 0) {
+              mainWindow.webContents.send('menu:openDirectory', result.filePaths[0]);
+            }
+          },
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' as const } : { role: 'quit' as const },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac
+          ? [
+              { type: 'separator' as const },
+              { role: 'front' as const },
+            ]
+          : [{ role: 'close' as const }]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
 
   // --- IPC Handlers ---
 
@@ -61,11 +164,35 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
 
+  // Settings: load
+  ipcMain.handle('settings:load', async () => {
+    currentSettings = await loadSettings();
+    return currentSettings;
+  });
+
+  // Settings: save API key
+  ipcMain.handle('settings:saveApiKey', async (_event, apiKey: string) => {
+    currentSettings.apiKey = apiKey;
+    await saveSettings(currentSettings);
+  });
+
+  // Settings: get recent directories
+  ipcMain.handle('settings:getRecentDirectories', () => {
+    return currentSettings.recentDirectories;
+  });
+
   // Run the rename pipeline
   ipcMain.on(
     'pipeline:start',
     async (_event, options: { directory: string; apiKey: string; dryRun: boolean; recursive: boolean; language: string; autoAccept: boolean; minConfidence: number; template?: string; mediaType?: string }) => {
       const ui = createGuiAdapter(mainWindow);
+
+      // Save API key and add directory to recents
+      if (options.apiKey) {
+        currentSettings.apiKey = options.apiKey;
+        await saveSettings(currentSettings);
+      }
+      currentSettings = await addRecentDirectory(options.directory);
 
       try {
         const config = await buildConfig({

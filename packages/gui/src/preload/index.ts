@@ -103,6 +103,23 @@ const api = {
     ipcRenderer.on('pipeline:error', handler);
     return () => ipcRenderer.removeListener('pipeline:error', handler);
   },
+
+  // Menu events
+  onMenuOpenDirectory: (callback: (directory: string) => void): (() => void) => {
+    const handler = (_e: unknown, directory: string): void => callback(directory);
+    ipcRenderer.on('menu:openDirectory', handler);
+    return () => ipcRenderer.removeListener('menu:openDirectory', handler);
+  },
+
+  // Settings
+  loadSettings: (): Promise<{ apiKey?: string; recentDirectories: string[] }> =>
+    ipcRenderer.invoke('settings:load'),
+
+  saveApiKey: (apiKey: string): Promise<void> =>
+    ipcRenderer.invoke('settings:saveApiKey', apiKey),
+
+  getRecentDirectories: (): Promise<string[]> =>
+    ipcRenderer.invoke('settings:getRecentDirectories'),
 };
 
 if (process.contextIsolated) {

@@ -18,6 +18,8 @@
   let showPrompt = $state<{ showName: string; candidates: ShowCandidate[] } | null>(null);
 
   // Settings state
+  let savedApiKey = $state<string>('');
+  let savedDirectory = $state<string>('');
   let apiKey = $state<string>('');
   let directory = $state<string>('');
   let recursive = $state<boolean>(false);
@@ -27,8 +29,21 @@
   // Cleanup functions for IPC listeners
   let cleanups: (() => void)[] = [];
 
-  onMount(() => {
+  onMount(async () => {
     const api = window.api;
+
+    // Load saved settings
+    try {
+      const settings = await api.loadSettings();
+      if (settings.apiKey) {
+        savedApiKey = settings.apiKey;
+      }
+      if (settings.recentDirectories?.length > 0) {
+        savedDirectory = settings.recentDirectories[0];
+      }
+    } catch {
+      // Settings not available yet, that's OK
+    }
 
     cleanups.push(
       api.onProgress((event, data) => {
@@ -80,6 +95,19 @@
       api.onPipelineError((data) => {
         errorMessage = data.message;
         currentView = 'setup';
+      }),
+    );
+
+    cleanups.push(
+      api.onMenuOpenDirectory((dir) => {
+        savedDirectory = dir;
+        if (currentView === 'setup') {
+          // Will be picked up by DirectoryPicker via prop
+        } else {
+          // Switch back to setup view with the new directory
+          handleReset();
+          savedDirectory = dir;
+        }
       }),
     );
   });
@@ -144,7 +172,7 @@
   {/if}
 
   {#if currentView === 'setup'}
-    <DirectoryPicker onstart={handleStart} />
+    <DirectoryPicker onstart={handleStart} initialDirectory={savedDirectory} initialApiKey={savedApiKey} />
   {:else if currentView === 'running'}
     <ProgressBar event={progressEvent} message={progressMessage} />
   {:else if currentView === 'results'}

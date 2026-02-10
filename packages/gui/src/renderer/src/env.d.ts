@@ -25,6 +25,10 @@ interface Window {
     respondConfirmShow: (selected: ShowCandidate | null) => void;
     onPipelineComplete: (callback: (data: { success: boolean }) => void) => () => void;
     onPipelineError: (callback: (data: { message: string }) => void) => () => void;
+    onMenuOpenDirectory: (callback: (directory: string) => void) => () => void;
+    loadSettings: () => Promise<{ apiKey?: string; recentDirectories: string[] }>;
+    saveApiKey: (apiKey: string) => Promise<void>;
+    getRecentDirectories: () => Promise<string[]>;
   };
 }
 
