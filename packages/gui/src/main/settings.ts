@@ -28,7 +28,7 @@ export async function loadSettings(): Promise<AppSettings> {
 export async function saveSettings(settings: AppSettings): Promise<void> {
   const dir = app.getPath('userData');
   await mkdir(dir, { recursive: true });
-  await writeFile(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8');
+  await writeFile(getSettingsPath(), JSON.stringify(settings, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }
 
 export async function addRecentDirectory(dir: string): Promise<AppSettings> {

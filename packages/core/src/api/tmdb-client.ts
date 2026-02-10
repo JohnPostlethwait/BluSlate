@@ -44,12 +44,19 @@ export class TmdbClient {
 
       logger.tmdb(`${attempt > 0 ? `Retry ${attempt}: ` : ''}GET ${path}`);
 
-      const response = await fetch(url.toString(), {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Accept': 'application/json',
-        },
-      });
+      let response: Response;
+      try {
+        response = await fetch(url.toString(), {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json',
+          },
+        });
+      } catch (err) {
+        // Sanitize network errors — they may contain the full URL with auth headers
+        const safeMessage = err instanceof Error ? err.message : 'Unknown network error';
+        throw new Error(`TMDb API network error on ${path}: ${safeMessage}`);
+      }
 
       if (response.status === 401) {
         throw new AuthenticationError(

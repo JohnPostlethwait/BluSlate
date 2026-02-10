@@ -30,7 +30,7 @@ function runFfprobe(filePath: string): Promise<FfprobeOutput> {
         '-show_streams',
         filePath,
       ],
-      { maxBuffer: 1024 * 1024 },
+      { maxBuffer: 1024 * 1024, timeout: 30_000 },
       (error, stdout) => {
         if (error) {
           reject(new Error(`ffprobe failed: ${error.message}`));

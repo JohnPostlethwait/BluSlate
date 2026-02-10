@@ -122,16 +122,11 @@ const api = {
     ipcRenderer.invoke('settings:getRecentDirectories'),
 };
 
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI);
-    contextBridge.exposeInMainWorld('api', api);
-  } catch (error) {
-    console.error(error);
-  }
-} else {
-  // @ts-expect-error fallback for non-isolated contexts
-  window.electron = electronAPI;
-  // @ts-expect-error fallback for non-isolated contexts
-  window.api = api;
+// Context isolation is always enabled — use contextBridge exclusively.
+// Never fall back to direct window assignment as it bypasses Electron's security boundary.
+try {
+  contextBridge.exposeInMainWorld('electron', electronAPI);
+  contextBridge.exposeInMainWorld('api', api);
+} catch (error) {
+  console.error('Failed to expose API via contextBridge:', error);
 }

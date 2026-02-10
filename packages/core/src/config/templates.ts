@@ -3,8 +3,26 @@ import { MediaType } from '../types/media.js';
 import type { TmdbMatchedItem } from '../types/media.js';
 import { sanitizeFilename } from '../utils/sanitize.js';
 
+const MAX_TEMPLATE_LENGTH = 500;
+const VALID_PLACEHOLDERS = new Set([
+  '{show_name}', '{title}', '{year}', '{season}',
+  '{episode}', '{episode_title}', '{ext}',
+]);
+
 export function getTemplate(mediaType: MediaType, customTemplate?: string): string {
-  if (customTemplate) return customTemplate;
+  if (customTemplate) {
+    if (customTemplate.length > MAX_TEMPLATE_LENGTH) {
+      throw new Error(`Template too long (max ${MAX_TEMPLATE_LENGTH} characters)`);
+    }
+    // Validate that only known placeholders are used
+    const placeholders = customTemplate.match(/\{[^}]+\}/g) ?? [];
+    for (const placeholder of placeholders) {
+      if (!VALID_PLACEHOLDERS.has(placeholder)) {
+        throw new Error(`Unknown template placeholder: ${placeholder}`);
+      }
+    }
+    return customTemplate;
+  }
   return mediaType === MediaType.TV ? DEFAULT_TEMPLATES.tv : DEFAULT_TEMPLATES.movie;
 }
 

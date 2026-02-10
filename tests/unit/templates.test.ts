@@ -21,6 +21,24 @@ describe('getTemplate', () => {
     const custom = '{title} - Custom';
     expect(getTemplate(MediaType.TV, custom)).toBe(custom);
   });
+
+  it('should reject templates exceeding max length', () => {
+    const longTemplate = '{title} ' + 'x'.repeat(500);
+    expect(() => getTemplate(MediaType.TV, longTemplate)).toThrow(/too long/);
+  });
+
+  it('should reject templates with unknown placeholders', () => {
+    expect(() => getTemplate(MediaType.TV, '{title} {malicious}')).toThrow(/Unknown template placeholder/);
+  });
+
+  it('should allow templates with all valid placeholders', () => {
+    const template = '{show_name} {title} {year} {season} {episode} {episode_title} {ext}';
+    expect(() => getTemplate(MediaType.TV, template)).not.toThrow();
+  });
+
+  it('should allow templates with no placeholders (literal text)', () => {
+    expect(getTemplate(MediaType.TV, 'just-a-name')).toBe('just-a-name');
+  });
 });
 
 describe('renderTemplate', () => {

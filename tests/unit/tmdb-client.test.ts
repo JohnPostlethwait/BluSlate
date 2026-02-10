@@ -306,4 +306,21 @@ describe('TmdbClient', () => {
       expect(url.searchParams.get('language')).toBe('ja-JP');
     });
   });
+
+  describe('network error handling', () => {
+    it('should wrap network errors without exposing the full URL', async () => {
+      mockFetch.mockRejectedValue(new Error('fetch failed'));
+
+      const client = new TmdbClient('super-secret-token');
+
+      await expect(client.searchTv('test')).rejects.toThrow(/TMDb API network error/);
+      // Error message should NOT contain the API key
+      try {
+        await client.searchTv('test');
+      } catch (err) {
+        expect((err as Error).message).not.toContain('super-secret-token');
+        expect((err as Error).message).toContain('/search/tv');
+      }
+    });
+  });
 });

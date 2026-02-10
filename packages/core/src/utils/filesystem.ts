@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { constants } from 'node:fs';
 import { VIDEO_EXTENSIONS } from '../types/media.js';
+import { logger } from './logger.js';
 
 export function isVideoFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -49,7 +50,7 @@ export async function safeRename(oldPath: string, newPath: string): Promise<stri
         return targetPath;
       } catch (renameErr) {
         // Clean up the orphaned placeholder so it doesn't block future renames
-        try { await fs.unlink(targetPath); } catch { /* ignore cleanup failure */ }
+        try { await fs.unlink(targetPath); } catch { logger.warn(`Failed to clean up placeholder: ${targetPath}`); }
         throw renameErr;
       }
     } catch (err: unknown) {
