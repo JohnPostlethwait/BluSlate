@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeFilename } from '../../src/utils/sanitize.js';
+import { sanitizeFilename } from '../../packages/core/src/utils/sanitize.js';
 
 describe('sanitizeFilename', () => {
   it('should return the name unchanged when valid', () => {

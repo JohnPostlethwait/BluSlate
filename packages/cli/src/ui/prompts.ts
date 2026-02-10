@@ -1,8 +1,6 @@
 import { confirm, select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
-import type { MatchResult } from '../types/media.js';
-import type { TmdbTvResult } from '../types/tmdb.js';
-import type { TmdbClient } from '../api/tmdb-client.js';
+import type { MatchResult, TmdbTvResult, TmdbClient } from '@mediafetch/core';
 import { editSingleMatch, displayReviewList, formatRuntimeMmSs } from './editor.js';
 import type { ReviewStatus } from './editor.js';
 import { displayResults } from './display.js';

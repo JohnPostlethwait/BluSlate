@@ -1,5 +1,5 @@
-import { MediaType } from '../../src/types/media.js';
-import type { ParsedFilename } from '../../src/types/media.js';
+import { MediaType } from '../../packages/core/src/types/media.js';
+import type { ParsedFilename } from '../../packages/core/src/types/media.js';
 
 export interface FilenameTestCase {
   input: string;

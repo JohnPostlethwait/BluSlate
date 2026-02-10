@@ -1,4 +1,4 @@
-import type { MediaFile } from '../../src/types/media.js';
+import type { MediaFile } from '../../packages/core/src/types/media.js';
 
 /**
  * Simulates the Stargate Universe BluRay rip directory structure:

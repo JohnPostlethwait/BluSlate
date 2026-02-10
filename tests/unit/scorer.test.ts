@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { levenshteinDistance, normalizedSimilarity, computeConfidence } from '../../src/core/scorer.js';
-import { MediaType } from '../../src/types/media.js';
-import type { ParsedFilename, TmdbMatchedItem, ProbeResult } from '../../src/types/media.js';
+import { levenshteinDistance, normalizedSimilarity, computeConfidence } from '../../packages/core/src/core/scorer.js';
+import { MediaType } from '../../packages/core/src/types/media.js';
+import type { ParsedFilename, TmdbMatchedItem, ProbeResult } from '../../packages/core/src/types/media.js';
 
 describe('levenshteinDistance', () => {
   it('should return 0 for identical strings', () => {

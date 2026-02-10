@@ -14,7 +14,7 @@ import type {
   DirectoryContext,
 } from '../types/media.js';
 import type { TmdbTvResult, TmdbSeasonDetails } from '../types/tmdb.js';
-import { confirmShowIdentification } from '../ui/prompts.js';
+import type { UserPrompter } from '../types/ui-adapter.js';
 
 export interface IdentifiedShow {
   showId: number;
@@ -34,6 +34,7 @@ export interface SeasonBatchResult {
 export async function identifyShow(
   client: TmdbClient,
   directoryContext: DirectoryContext,
+  prompts: UserPrompter,
 ): Promise<IdentifiedShow | null> {
   const searchResponse = await client.searchTv(directoryContext.showName);
 
@@ -44,7 +45,7 @@ export async function identifyShow(
 
   // Present top results to user for confirmation
   const topResults = searchResponse.results.slice(0, 5);
-  const confirmed = await confirmShowIdentification(
+  const confirmed = await prompts.confirmShowIdentification(
     directoryContext.showName,
     topResults,
   );

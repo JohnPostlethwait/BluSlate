@@ -4,7 +4,7 @@ import {
   parseDirectoryContext,
   groupFilesBySeason,
   extractTrackNumber,
-} from '../../src/core/directory-parser.js';
+} from '../../packages/core/src/core/directory-parser.js';
 import {
   SCAN_ROOT,
   allSguFiles,

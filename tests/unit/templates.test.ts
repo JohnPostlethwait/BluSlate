@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { renderTemplate, getTemplate } from '../../src/config/templates.js';
-import { MediaType } from '../../src/types/media.js';
-import type { TmdbMatchedItem } from '../../src/types/media.js';
+import { renderTemplate, getTemplate } from '../../packages/core/src/config/templates.js';
+import { MediaType } from '../../packages/core/src/types/media.js';
+import type { TmdbMatchedItem } from '../../packages/core/src/types/media.js';
 
 describe('getTemplate', () => {
   it('should return TV template for TV type', () => {

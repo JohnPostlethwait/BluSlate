@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseFilename } from '../../src/core/parser.js';
-import { MediaType } from '../../src/types/media.js';
+import { parseFilename } from '../../packages/core/src/core/parser.js';
+import { MediaType } from '../../packages/core/src/types/media.js';
 import {
   tvShowCases,
   movieCases,

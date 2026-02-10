@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch } from '../../src/core/batch-matcher.js';
-import type { SeasonGroup, MediaFile, ProbeResult, ClassifiedFile } from '../../src/types/media.js';
-import type { TmdbSeasonDetails, TmdbEpisode } from '../../src/types/tmdb.js';
-import { computeBatchConfidence } from '../../src/core/scorer.js';
-import { TmdbClient } from '../../src/api/tmdb-client.js';
+import { classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch } from '../../packages/core/src/core/batch-matcher.js';
+import type { SeasonGroup, MediaFile, ProbeResult, ClassifiedFile } from '../../packages/core/src/types/media.js';
+import type { TmdbSeasonDetails, TmdbEpisode } from '../../packages/core/src/types/tmdb.js';
+import { computeBatchConfidence } from '../../packages/core/src/core/scorer.js';
+import { TmdbClient } from '../../packages/core/src/api/tmdb-client.js';
 
 function makeFile(subdir: string, name: string, sizeBytes: number = 1_000_000_000): MediaFile {
   return {

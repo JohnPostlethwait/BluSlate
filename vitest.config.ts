@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import path from 'node:path';
 
 export default defineConfig({
   test: {
@@ -7,8 +8,13 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
-      exclude: ['src/index.ts', 'src/types/**'],
+      include: ['packages/*/src/**/*.ts'],
+      exclude: ['packages/core/src/index.ts', 'packages/core/src/types/**'],
+    },
+  },
+  resolve: {
+    alias: {
+      '@mediafetch/core': path.resolve(__dirname, 'packages/core/src/index.ts'),
     },
   },
 });

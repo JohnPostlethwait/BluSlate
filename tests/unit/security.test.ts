@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { safeRename } from '../../src/utils/filesystem.js';
-import { sanitizeFilename } from '../../src/utils/sanitize.js';
+import { safeRename } from '../../packages/core/src/utils/filesystem.js';
+import { sanitizeFilename } from '../../packages/core/src/utils/sanitize.js';
 
 let tmpDir: string;
 

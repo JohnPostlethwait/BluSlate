@@ -1,0 +1,32 @@
+{
+  "name": "@mediafetch/core",
+  "version": "0.1.0",
+  "description": "Core business logic for MediaFetch — media file matching and renaming using TMDb",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@ctrl/video-filename-parser": "^5.4.1",
+    "chalk": "^5.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

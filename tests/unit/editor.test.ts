@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { applyEpisodeEdit, applySeasonEdit, applySkip, parseEpisodeInput, formatRuntimeMmSs } from '../../src/ui/editor.js';
-import { MediaType } from '../../src/types/media.js';
-import type { MatchResult, TmdbMatchedItem } from '../../src/types/media.js';
+import { applyEpisodeEdit, applySeasonEdit, applySkip, parseEpisodeInput, formatRuntimeMmSs } from '../../packages/cli/src/ui/editor.js';
+import { MediaType } from '../../packages/core/src/types/media.js';
+import type { MatchResult, TmdbMatchedItem } from '../../packages/core/src/types/media.js';
 
 function makeMatch(overrides: Partial<TmdbMatchedItem> = {}): MatchResult {
   const tmdbMatch: TmdbMatchedItem = {

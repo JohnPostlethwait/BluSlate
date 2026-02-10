@@ -1,8 +1,9 @@
 import { Command } from 'commander';
-import { buildConfig, saveApiKey } from './config/config.js';
-import { runPipeline } from './core/pipeline.js';
-import { setVerbose } from './utils/logger.js';
+import { buildConfig, saveApiKey } from '@mediafetch/core';
+import { runPipeline } from '@mediafetch/core';
+import { setVerbose } from '@mediafetch/core';
 import { promptForApiKey } from './ui/prompts.js';
+import { createCliAdapter } from './ui/cli-adapter.js';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -57,7 +58,8 @@ Examples:
           lang: options['lang'] as string,
         });
 
-        await runPipeline(config);
+        const ui = createCliAdapter();
+        await runPipeline(config, ui);
       } catch (err) {
         if (err instanceof Error) {
           console.error(`\nError: ${err.message}\n`);
