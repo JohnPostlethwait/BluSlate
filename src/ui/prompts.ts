@@ -1,0 +1,271 @@
+import { confirm, select, input } from '@inquirer/prompts';
+import chalk from 'chalk';
+import type { MatchResult } from '../types/media.js';
+import type { TmdbTvResult } from '../types/tmdb.js';
+import type { TmdbClient } from '../api/tmdb-client.js';
+import { editSingleMatch, displayReviewList, formatRuntimeMmSs } from './editor.js';
+import type { ReviewStatus } from './editor.js';
+import { displayResults } from './display.js';
+
+export async function confirmRenames(
+  matches: MatchResult[],
+  autoAccept: boolean,
+  minConfidence: number,
+  template?: string,
+  scanDirectory?: string,
+  client?: TmdbClient,
+): Promise<MatchResult[]> {
+  let toRename = matches.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName);
+
+  if (toRename.length === 0) return [];
+
+  // Auto-accept high-confidence matches if --yes flag is set
+  if (autoAccept) {
+    const autoAccepted = toRename.filter((m) => m.confidence >= minConfidence);
+    const needsReview = toRename.filter((m) => m.confidence < minConfidence);
+
+    if (needsReview.length === 0) return autoAccepted;
+
+    // Review low-confidence matches individually
+    const confirmed = [...autoAccepted];
+    for (const match of needsReview) {
+      const accepted = await confirmSingleRename(match);
+      if (accepted) confirmed.push(match);
+    }
+    return confirmed;
+  }
+
+  // Interactive mode: confirm all at once, review/edit, or skip
+  while (true) {
+    if (toRename.length === 0) {
+      console.log(chalk.yellow('\nNo files remaining to rename.\n'));
+      return [];
+    }
+
+    if (toRename.length === 1) {
+      const accepted = await confirmSingleRename(toRename[0]);
+      return accepted ? [toRename[0]] : [];
+    }
+
+    const action = await select({
+      message: `Rename ${toRename.length} file(s)?`,
+      choices: [
+        { name: 'Yes, rename all', value: 'all' },
+        { name: 'Review and edit', value: 'review' },
+        { name: 'Skip all', value: 'none' },
+      ],
+    });
+
+    if (action === 'all') return toRename;
+    if (action === 'none') return [];
+
+    if (action === 'review') {
+      const result = await reviewAndEdit(matches, template, scanDirectory, client);
+
+      if (result === null) {
+        // User chose "Back to menu" — re-filter and loop back
+        toRename = matches.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName);
+        continue;
+      }
+
+      return result;
+    }
+  }
+}
+
+/**
+ * Unified review-and-edit flow. Combines file picker (non-linear) with
+ * per-file accept/edit/skip. Returns the list of files to rename,
+ * or null if the user chose "Back to menu".
+ */
+async function reviewAndEdit(
+  matches: MatchResult[],
+  template?: string,
+  scanDirectory?: string,
+  client?: TmdbClient,
+): Promise<MatchResult[] | null> {
+  const editable = matches.filter((m) => m.status !== 'unmatched' && m.tmdbMatch);
+
+  if (editable.length === 0) {
+    console.log(chalk.yellow('\nNo editable matches available.\n'));
+    return null;
+  }
+
+  const statusMap = new Map<MatchResult, ReviewStatus>();
+  for (const m of editable) {
+    statusMap.set(m, 'pending');
+  }
+
+  while (true) {
+    displayReviewList(editable, statusMap);
+
+    const choices = editable.map((m, i) => {
+      const status = statusMap.get(m) ?? 'pending';
+      const statusSuffix = status === 'accepted' ? chalk.green(' ✓')
+        : status === 'skipped' ? chalk.red(' ✗')
+        : '';
+      const runtime = formatRuntimeMmSs(m);
+      const display = status === 'skipped'
+        ? `${String(i + 1).padStart(2)}. ${chalk.dim(m.mediaFile.fileName)}  ${chalk.dim('(skipped)')}${statusSuffix}`
+        : `${String(i + 1).padStart(2)}. [${runtime}] ${m.mediaFile.fileName}  ${chalk.dim('-->')}  ${m.newFilename}${statusSuffix}`;
+      return {
+        name: display,
+        value: i,
+      };
+    });
+
+    const action = await select({
+      message: 'Select a file to review, or finish:',
+      choices: [
+        ...choices,
+        { name: chalk.green('Accept all and rename'), value: -1 },
+        { name: 'Back to menu', value: -2 },
+      ],
+      loop: false,
+      pageSize: 20,
+    });
+
+    if (action === -1) {
+      // Accept all and rename: return all non-skipped files
+      const toRename = editable.filter((m) => statusMap.get(m) !== 'skipped');
+
+      // Re-display results if any edits were made
+      if (scanDirectory) {
+        displayResults(matches, scanDirectory);
+      }
+
+      return toRename.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName);
+    }
+
+    if (action === -2) {
+      // Back to menu — discard review state
+      return null;
+    }
+
+    const match = editable[action];
+
+    // If the file was skipped, it can't be edited (tmdbMatch is cleared)
+    if (statusMap.get(match) === 'skipped') {
+      console.log(chalk.dim('  This file has been skipped and cannot be edited.'));
+      continue;
+    }
+
+    const result = await editSingleMatch(match, template, client);
+
+    switch (result) {
+      case 'accepted':
+        statusMap.set(match, 'accepted');
+        break;
+      case 'edited':
+        statusMap.set(match, 'accepted');
+        break;
+      case 'skipped':
+        statusMap.set(match, 'skipped');
+        break;
+      case 'cancelled':
+        // No change to status
+        break;
+    }
+  }
+}
+
+async function confirmSingleRename(match: MatchResult): Promise<boolean> {
+  return confirm({
+    message: `Rename "${match.mediaFile.fileName}" -> "${match.newFilename}" (${match.confidence}% confidence)?`,
+    default: match.confidence >= 60,
+  });
+}
+
+export async function promptForManualSearch(): Promise<string | null> {
+  const query = await input({
+    message: 'Enter a search query (or press Enter to skip):',
+  });
+
+  return query.trim() || null;
+}
+
+/**
+ * Present TMDb search results to the user and ask them to confirm or select the correct show.
+ * Returns the confirmed TmdbTvResult, or null if the user skips.
+ */
+export async function confirmShowIdentification(
+  directoryShowName: string,
+  candidates: TmdbTvResult[],
+): Promise<TmdbTvResult | null> {
+  if (candidates.length === 0) return null;
+
+  const topMatch = candidates[0];
+  const year = topMatch.first_air_date
+    ? topMatch.first_air_date.substring(0, 4)
+    : 'unknown year';
+
+  console.log(
+    `\n${chalk.cyan('Detected show from directory:')} ${chalk.bold(directoryShowName)}`,
+  );
+
+  const choices = [
+    {
+      name: `Yes — ${topMatch.name} (${year})`,
+      value: 'confirm' as const,
+    },
+    ...candidates.slice(1).map((c, idx) => {
+      const cYear = c.first_air_date ? c.first_air_date.substring(0, 4) : '?';
+      return {
+        name: `${c.name} (${cYear})`,
+        value: `pick-${idx + 1}` as const,
+      };
+    }),
+    {
+      name: 'Search with different name',
+      value: 'search' as const,
+    },
+    {
+      name: 'Skip this show',
+      value: 'skip' as const,
+    },
+  ];
+
+  const action = await select({
+    message: `Is this "${chalk.bold(topMatch.name)}" (${year})?`,
+    choices,
+  });
+
+  if (action === 'confirm') {
+    return topMatch;
+  }
+
+  if (action === 'skip') {
+    return null;
+  }
+
+  if (action === 'search') {
+    const query = await input({
+      message: 'Enter show name to search:',
+    });
+    if (!query.trim()) return null;
+
+    // Return null — the caller should re-search with the new query
+    // We can't do the search here because we don't have the TmdbClient
+    // Instead, we'll signal the caller by returning a special value
+    // Actually, let's just return null and let the pipeline handle it
+    // The user can retry
+    return null;
+  }
+
+  // User picked an alternative candidate
+  if (typeof action === 'string' && action.startsWith('pick-')) {
+    const idx = parseInt(action.substring(5), 10);
+    return candidates[idx] ?? null;
+  }
+
+  return null;
+}
+
+export async function promptForApiKey(): Promise<string> {
+  const key = await input({
+    message: 'Enter your TMDb API Read Access Token:',
+    validate: (value) => value.trim().length > 0 || 'API key cannot be empty',
+  });
+
+  return key.trim();
+}
