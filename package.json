@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r run typecheck",
-    "start": "pnpm --filter @mediafetch/cli run start"
+    "start": "pnpm --filter @mediafetch/cli run start",
+    "generate-icon": "node scripts/generate-icon.mjs",
+    "package:gui": "pnpm --filter @mediafetch/core run build && pnpm --filter @mediafetch/gui run build && pnpm --filter @mediafetch/gui run package"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -27,10 +29,15 @@
   "license": "ISC",
   "packageManager": "pnpm@10.28.2",
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild"]
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "sharp"
+    ]
   },
   "devDependencies": {
     "@types/node": "^25.2.1",
+    "sharp": "^0.34.5",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

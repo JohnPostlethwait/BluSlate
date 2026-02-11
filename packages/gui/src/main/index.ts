@@ -99,6 +99,13 @@ let currentSettings: AppSettings = { recentDirectories: [] };
 function createWindow(): BrowserWindow {
   // Restore saved window bounds
   const bounds = currentSettings.windowBounds;
+
+  // Resolve icon path — macOS uses .icns from the app bundle automatically;
+  // this sets the icon for Linux/Windows window decorations and taskbar.
+  const iconPath = is.dev
+    ? join(__dirname, '../../resources/icon.png')
+    : join(process.resourcesPath, 'icon.png');
+
   const mainWindow = new BrowserWindow({
     width: bounds?.width ?? 1100,
     height: bounds?.height ?? 750,
@@ -108,6 +115,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     title: 'MediaFetch',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

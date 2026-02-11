@@ -5,3 +5,6 @@ dist/
 coverage/
 .mediafetch-log.json
 .claude/
+
+# electron-builder output
+packages/gui/release/

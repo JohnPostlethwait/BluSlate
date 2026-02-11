@@ -9,18 +9,43 @@ files:
   - '!electron.vite.config.*'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+
+# Publish to GitHub Releases for manual download
+publish:
+  provider: github
+  owner: JohnPostlethwait
+  repo: MediaFetch
+  releaseType: release
+
+# Strip macOS extended attributes before codesign runs
+afterPack: ./scripts/afterPack.cjs
+
 mac:
   target:
     - dmg
     - zip
-  artifactName: '${name}-${version}-${arch}.${ext}'
+  artifactName: '${productName}-${version}-${arch}.${ext}'
+  entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  # Don't fail if no real certificate is found
+  forceCodeSigning: false
+  # Skip signing for local/CI builds without certificates.
+  # On Apple Silicon, macOS Sequoia's com.apple.provenance xattr blocks ad-hoc
+  # signing. This produces unsigned binaries — users may need:
+  #   xattr -cr /Applications/MediaFetch.app
+  # TODO: Replace with your Developer ID when code signing is configured
+  identity: null
+  # identity: "Developer ID Application: Your Name (TEAM_ID)"
+  # notarize: false
 win:
   target:
     - nsis
-  artifactName: '${name}-${version}-setup.${ext}'
+  artifactName: '${productName}-${version}-setup.${ext}'
+  # TODO: Uncomment when code signing is configured
+  # certificateFile: ''
+  # certificatePassword: ''
 nsis:
-  artifactName: '${name}-${version}-setup.${ext}'
+  artifactName: '${productName}-${version}-setup.${ext}'
   shortcutName: MediaFetch
   uninstallDisplayName: MediaFetch
   createDesktopShortcut: always
@@ -28,6 +53,11 @@ linux:
   target:
     - AppImage
     - deb
-  artifactName: '${name}-${version}-${arch}.${ext}'
+  artifactName: '${productName}-${version}-${arch}.${ext}'
   maintainer: mediafetch
   category: Utility
+
+# Copy icon.png to app resources so it's accessible via process.resourcesPath on Linux
+extraResources:
+  - from: resources/icon.png
+    to: icon.png

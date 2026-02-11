@@ -8,7 +8,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-builder --config electron-builder.yml"
+    "package": "electron-builder --config electron-builder.yml",
+    "package:publish": "electron-builder --config electron-builder.yml --publish always"
   },
   "engines": {
     "node": ">=18.0.0"
