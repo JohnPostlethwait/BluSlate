@@ -12,13 +12,19 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // Do NOT use externalizeDepsPlugin() here. Sandboxed preload scripts cannot
+    // resolve bare module specifiers — only the built-in 'electron' module is
+    // available. All other dependencies (e.g. @electron-toolkit/preload) must be
+    // bundled into the preload output.
+    plugins: [externalizeDepsPlugin({ exclude: ['@electron-toolkit/preload'] })],
     build: {
       rollupOptions: {
         output: {
-          // Output as .mjs so the main process preload path can use a predictable extension.
-          // electron-vite defaults depend on the package.json "type" field — force ESM explicitly.
-          entryFileNames: '[name].mjs',
+          // Sandboxed Electron preload scripts MUST be CommonJS — ESM imports
+          // fail silently. Force CJS format and .js extension regardless of the
+          // package.json "type": "module" setting.
+          format: 'cjs',
+          entryFileNames: '[name].js',
         },
       },
     },

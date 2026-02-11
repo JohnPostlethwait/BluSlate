@@ -31,7 +31,7 @@ function createWindow(): BrowserWindow {
     title: 'MediaFetch',
     icon: iconPath,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -198,9 +198,14 @@ app.whenReady().then(async () => {
   });
 
   // Run the rename pipeline (with full input validation)
+  let pipelineRunning = false;
+
   ipcMain.on(
     'pipeline:start',
     async (_event, rawOptions: unknown) => {
+      if (pipelineRunning) return;
+      pipelineRunning = true;
+
       const ui = createGuiAdapter(mainWindow);
 
       try {
@@ -241,6 +246,8 @@ app.whenReady().then(async () => {
       } catch (err) {
         const message = sanitizeErrorMessage(err);
         mainWindow.webContents.send('pipeline:error', { message });
+      } finally {
+        pipelineRunning = false;
       }
     },
   );

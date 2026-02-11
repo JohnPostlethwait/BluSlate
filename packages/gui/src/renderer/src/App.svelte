@@ -186,7 +186,7 @@
       onselect={handleShowSelect}
     />
   {:else if currentView === 'summary' && summaryData}
-    <SummaryPanel {...summaryData} onreset={handleReset} />
+    <SummaryPanel {...summaryData} {matches} {scanDirectory} onreset={handleReset} />
   {/if}
 </main>
 

@@ -1,13 +1,17 @@
 <script lang="ts">
+  import ResultsTable from './ResultsTable.svelte';
+
   interface Props {
     renamed: number;
     skipped: number;
     failed: number;
     dryRun: boolean;
+    matches?: MatchResultData[];
+    scanDirectory?: string;
     onreset: () => void;
   }
 
-  let { renamed, skipped, failed, dryRun, onreset }: Props = $props();
+  let { renamed, skipped, failed, dryRun, matches = [], scanDirectory = '', onreset }: Props = $props();
 
   let total = $derived(renamed + skipped + failed);
 </script>
@@ -45,6 +49,12 @@
       {#if failed > 0}
         <div class="bar-segment bar-failed" style="width: {(failed / total) * 100}%"></div>
       {/if}
+    </div>
+  {/if}
+
+  {#if matches.length > 0}
+    <div class="results-section">
+      <ResultsTable {matches} {scanDirectory} />
     </div>
   {/if}
 
@@ -144,6 +154,11 @@
 
   .bar-failed {
     background: #ff4444;
+  }
+
+  .results-section {
+    margin-bottom: 24px;
+    text-align: left;
   }
 
   .note {

@@ -10,10 +10,14 @@
 
   // Keep a log of completed steps
   let completedSteps = $state<string[]>([]);
+  let lastSucceedMessage = $state<string>('');
 
   $effect(() => {
-    if (event === 'succeed' && message) {
-      completedSteps = [...completedSteps, message];
+    if (event === 'succeed' && message && message !== lastSucceedMessage) {
+      lastSucceedMessage = message;
+      // Mutate in place — spreading would read completedSteps inside this
+      // effect and create an infinite reactivity loop (effect_update_depth_exceeded).
+      completedSteps.push(message);
     }
   });
 
