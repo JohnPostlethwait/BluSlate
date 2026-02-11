@@ -13,6 +13,15 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        output: {
+          // Output as .mjs so the main process preload path can use a predictable extension.
+          // electron-vite defaults depend on the package.json "type" field — force ESM explicitly.
+          entryFileNames: '[name].mjs',
+        },
+      },
+    },
   },
   renderer: {
     plugins: [svelte()],
