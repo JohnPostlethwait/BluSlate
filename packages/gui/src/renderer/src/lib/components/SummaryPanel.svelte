@@ -62,8 +62,11 @@
     <p class="note">No files were actually renamed. Run again without "Dry Run" to apply changes.</p>
   {/if}
 
-  <div class="actions">
-    <button class="btn-reset" onclick={onreset}>Start New Scan</button>
+  <div style="display: flex; justify-content: center; margin-top: 20px;">
+    <button
+      style="background: #00d4ff; border: none; color: #0a0a1a; padding: 12px 32px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;"
+      onclick={onreset}
+    >Start New Scan</button>
   </div>
 </div>
 
@@ -167,23 +170,4 @@
     margin: 0 0 24px;
   }
 
-  .actions {
-    display: flex;
-    justify-content: center;
-  }
-
-  .btn-reset {
-    background: #00d4ff;
-    border: none;
-    color: #0a0a1a;
-    padding: 12px 32px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .btn-reset:hover {
-    background: #33dfff;
-  }
 </style>

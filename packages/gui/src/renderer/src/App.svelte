@@ -26,6 +26,9 @@
   let dryRun = $state<boolean>(false);
   let language = $state<string>('en-US');
 
+  // When true, ignore all pipeline IPC events (user cancelled mid-pipeline)
+  let ignoreEvents = $state(false);
+
   // Cleanup functions for IPC listeners
   let cleanups: (() => void)[] = [];
 
@@ -47,6 +50,7 @@
 
     cleanups.push(
       api.onProgress((event, data) => {
+        if (ignoreEvents) return;
         progressEvent = event;
         progressMessage = data.message ?? '';
 
@@ -58,6 +62,7 @@
 
     cleanups.push(
       api.onResults((data) => {
+        if (ignoreEvents) return;
         matches = data.matches;
         scanDirectory = data.scanDirectory;
         currentView = 'results';
@@ -66,6 +71,7 @@
 
     cleanups.push(
       api.onSummary((data) => {
+        if (ignoreEvents) return;
         summaryData = data;
         currentView = 'summary';
       }),
@@ -73,6 +79,7 @@
 
     cleanups.push(
       api.onConfirmRenames((data) => {
+        if (ignoreEvents) return;
         matches = data.matches;
         currentView = 'confirm';
       }),
@@ -80,6 +87,7 @@
 
     cleanups.push(
       api.onConfirmShow((data) => {
+        if (ignoreEvents) return;
         showPrompt = data;
         currentView = 'showSelect';
       }),
@@ -87,12 +95,13 @@
 
     cleanups.push(
       api.onPipelineComplete(() => {
-        // Summary will follow from displaySummary
+        ignoreEvents = false;
       }),
     );
 
     cleanups.push(
       api.onPipelineError((data) => {
+        ignoreEvents = false;
         errorMessage = data.message;
         currentView = 'setup';
       }),
@@ -121,6 +130,7 @@
     apiKey = event.apiKey;
     recursive = event.recursive;
     dryRun = event.dryRun;
+    ignoreEvents = false;
     errorMessage = '';
     summaryData = null;
     matches = [];
@@ -137,18 +147,31 @@
   }
 
   function handleConfirm(confirmed: MatchResultData[]) {
-    window.api.respondConfirmRenames(confirmed);
+    // Unwrap Svelte 5 $state proxies so Electron IPC structured clone works
+    window.api.respondConfirmRenames(JSON.parse(JSON.stringify(confirmed)));
     currentView = 'running';
     progressMessage = 'Renaming files...';
   }
 
   function handleShowSelect(selected: ShowCandidate | null) {
-    window.api.respondConfirmShow(selected);
+    // Unwrap Svelte 5 $state proxy so Electron IPC structured clone works
+    window.api.respondConfirmShow(selected ? JSON.parse(JSON.stringify(selected)) : null);
     showPrompt = null;
     currentView = 'running';
   }
 
   function handleReset() {
+    // If we're leaving a prompt view, send an empty response so the main-process
+    // pipeline Promise resolves and releases the pipelineRunning guard.
+    // Also ignore subsequent pipeline events until the pipeline finishes.
+    if (currentView === 'confirm') {
+      window.api.respondConfirmRenames([]);
+      ignoreEvents = true;
+    } else if (currentView === 'showSelect') {
+      window.api.respondConfirmShow(null);
+      ignoreEvents = true;
+    }
+
     currentView = 'setup';
     matches = [];
     summaryData = null;
@@ -178,12 +201,13 @@
   {:else if currentView === 'results'}
     <ResultsTable {matches} {scanDirectory} />
   {:else if currentView === 'confirm'}
-    <ConfirmDialog {matches} onconfirm={handleConfirm} oncancel={handleReset} />
+    <ConfirmDialog {matches} {scanDirectory} onconfirm={handleConfirm} oncancel={handleReset} />
   {:else if currentView === 'showSelect' && showPrompt}
     <ShowSelector
       showName={showPrompt.showName}
       candidates={showPrompt.candidates}
       onselect={handleShowSelect}
+      oncancel={handleReset}
     />
   {:else if currentView === 'summary' && summaryData}
     <SummaryPanel {...summaryData} {matches} {scanDirectory} onreset={handleReset} />
@@ -205,7 +229,7 @@
   }
 
   main {
-    max-width: 1000px;
+    max-width: 1600px;
     margin: 0 auto;
     padding: 24px;
   }

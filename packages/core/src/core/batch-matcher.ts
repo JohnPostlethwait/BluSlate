@@ -190,6 +190,7 @@ export async function matchSeasonBatch(
         template,
         false,
         epRuntime,
+        tmdbEpisodes.length,
       );
       matched.push(match);
       fileIdx++;
@@ -223,6 +224,7 @@ export async function matchSeasonBatch(
           template,
           true,
           epRuntime,
+          tmdbEpisodes.length,
         );
         matched.push(match);
         fileIdx++;
@@ -254,6 +256,7 @@ export async function matchSeasonBatch(
         template,
         false,
         epRuntime,
+        tmdbEpisodes.length,
       );
       matched.push(match);
       fileIdx++;
@@ -276,6 +279,7 @@ export async function matchSeasonBatch(
         template,
         false,
         undefined,
+        tmdbEpisodes.length,
       );
       matched.push(match);
       fileIdx++;
@@ -468,6 +472,7 @@ function createBatchMatch(
   customTemplate?: string,
   isMultiEpisodeMatch?: boolean,
   singleEpisodeRuntimeMinutes?: number,
+  seasonEpisodeCount?: number,
 ): MatchResult {
   const tmdbMatch: TmdbMatchedItem = {
     id: showId,
@@ -480,6 +485,7 @@ function createBatchMatch(
     episodeNumberEnd,
     episodeTitle,
     searchRank: 0,
+    seasonEpisodeCount,
   };
 
   const confidence = computeBatchConfidence({

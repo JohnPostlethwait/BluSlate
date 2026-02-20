@@ -9,9 +9,26 @@
   let matched = $derived(matches.filter((m) => m.status !== 'unmatched'));
   let unmatched = $derived(matches.filter((m) => m.status === 'unmatched'));
 
+  // Compute per-show/season episode stats from matched data
+  interface SeasonStat { matchedCount: number; totalCount: number }
+  let seasonStats = $derived.by(() => {
+    const stats = new Map<string, SeasonStat>();
+    for (const m of matched) {
+      const tm = m.tmdbMatch;
+      if (!tm || tm.seasonNumber === undefined || !tm.seasonEpisodeCount) continue;
+      const key = `${tm.name} S${String(tm.seasonNumber).padStart(2, '0')}`;
+      const existing = stats.get(key);
+      if (existing) {
+        existing.matchedCount++;
+      } else {
+        stats.set(key, { matchedCount: 1, totalCount: tm.seasonEpisodeCount });
+      }
+    }
+    return stats;
+  });
+
   function relativePath(filePath: string): string {
     if (!scanDirectory) return filePath;
-    // Simple relative path: remove scanDirectory prefix
     if (filePath.startsWith(scanDirectory)) {
       const rel = filePath.substring(scanDirectory.length);
       return rel.startsWith('/') || rel.startsWith('\\') ? rel.substring(1) : rel;
@@ -38,62 +55,67 @@
 <div class="results">
   {#if matched.length > 0}
     <h2>Rename Plan <span class="count">({matched.length} files)</span></h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
+
+    {#if seasonStats.size > 0}
+      <div class="season-stats">
+        {#each [...seasonStats] as [label, stat]}
+          <span class="stat-chip" class:stat-complete={stat.matchedCount === stat.totalCount} class:stat-partial={stat.matchedCount !== stat.totalCount}>
+            {label}: {stat.matchedCount}/{stat.totalCount} episodes
+          </span>
+        {/each}
+      </div>
+    {/if}
+
+    <table>
+      <thead>
+        <tr>
+          <th class="col-num">#</th>
+          <th>Original</th>
+          <th>New Name</th>
+          <th class="col-fixed">Runtime</th>
+          <th class="col-fixed">Conf.</th>
+          <th class="col-fixed">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each matched as match, i}
           <tr>
-            <th class="col-num">#</th>
-            <th class="col-original">Original</th>
-            <th class="col-new">New Name</th>
-            <th class="col-runtime">Runtime</th>
-            <th class="col-confidence">Conf.</th>
-            <th class="col-status">Status</th>
+            <td class="col-num">{i + 1}</td>
+            <td class="col-wrap">{relativePath(match.mediaFile.filePath)}</td>
+            <td class="col-wrap">{match.newFilename}</td>
+            <td class="col-fixed col-dim">{formatRuntime(match.probeData)}</td>
+            <td class="col-fixed">
+              <span class="badge {confidenceClass(match.confidence)}">{match.confidence}%</span>
+            </td>
+            <td class="col-fixed">
+              <span class="status-{match.status}">{match.status}</span>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {#each matched as match, i}
-            <tr>
-              <td class="col-num">{i + 1}</td>
-              <td class="col-original" title={match.mediaFile.filePath}>
-                {relativePath(match.mediaFile.filePath)}
-              </td>
-              <td class="col-new">{match.newFilename}</td>
-              <td class="col-runtime">{formatRuntime(match.probeData)}</td>
-              <td class="col-confidence">
-                <span class="badge {confidenceClass(match.confidence)}">{match.confidence}%</span>
-              </td>
-              <td class="col-status">
-                <span class="status-{match.status}">{match.status}</span>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+        {/each}
+      </tbody>
+    </table>
   {/if}
 
   {#if unmatched.length > 0}
     <h2 class="unmatched-heading">Unmatched <span class="count">({unmatched.length} files)</span></h2>
-    <div class="table-wrap">
-      <table class="unmatched-table">
-        <thead>
+    <table class="unmatched-table">
+      <thead>
+        <tr>
+          <th class="col-num">#</th>
+          <th>File</th>
+          <th class="col-fixed">Runtime</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each unmatched as match, i}
           <tr>
-            <th class="col-num">#</th>
-            <th>File</th>
-            <th class="col-runtime">Runtime</th>
+            <td class="col-num">{i + 1}</td>
+            <td class="col-wrap">{relativePath(match.mediaFile.filePath)}</td>
+            <td class="col-fixed col-dim">{formatRuntime(match.probeData)}</td>
           </tr>
-        </thead>
-        <tbody>
-          {#each unmatched as match, i}
-            <tr>
-              <td class="col-num">{i + 1}</td>
-              <td title={match.mediaFile.filePath}>{relativePath(match.mediaFile.filePath)}</td>
-              <td class="col-runtime">{formatRuntime(match.probeData)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+        {/each}
+      </tbody>
+    </table>
   {/if}
 </div>
 
@@ -121,14 +143,36 @@
     margin-top: 24px;
   }
 
-  .table-wrap {
-    overflow-x: auto;
+  .season-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .stat-chip {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .stat-complete {
+    background: #1b4332;
+    color: #4caf50;
+  }
+
+  .stat-partial {
+    background: #3a3000;
+    color: #ffb300;
   }
 
   table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85rem;
+    table-layout: auto;
   }
 
   th {
@@ -144,30 +188,27 @@
     padding: 8px 10px;
     border-bottom: 1px solid #1a1a3a;
     color: #ccc;
-    max-width: 300px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    vertical-align: top;
   }
 
   .col-num {
     width: 40px;
     text-align: right;
     color: #666;
+    white-space: nowrap;
   }
 
-  .col-runtime {
-    width: 70px;
+  .col-wrap {
+    word-break: break-all;
+  }
+
+  .col-fixed {
+    white-space: nowrap;
+    width: 1%;
+  }
+
+  .col-dim {
     color: #888;
-  }
-
-  .col-confidence {
-    width: 60px;
-    text-align: center;
-  }
-
-  .col-status {
-    width: 80px;
   }
 
   .badge {

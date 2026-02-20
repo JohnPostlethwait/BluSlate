@@ -48,10 +48,10 @@ export function createGuiAdapter(mainWindow: BrowserWindow): UIAdapter {
         }
 
         return new Promise((resolve) => {
-          const renameable = matches.filter(
-            (m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName,
-          );
-          mainWindow.webContents.send('prompt:confirmRenames', { matches: renameable });
+          // Send ALL matches so the ConfirmDialog can display both renameable
+          // files (with checkboxes) and skipped files (unmatched/unchanged).
+          // The dialog handles filtering internally.
+          mainWindow.webContents.send('prompt:confirmRenames', { matches });
           ipcMain.once('prompt:confirmRenames:response', (_event, { confirmed }) => {
             resolve(confirmed);
           });

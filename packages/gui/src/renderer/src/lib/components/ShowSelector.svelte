@@ -3,11 +3,12 @@
     showName: string;
     candidates: ShowCandidate[];
     onselect: (selected: ShowCandidate | null) => void;
+    oncancel: () => void;
   }
 
-  let { showName, candidates, onselect }: Props = $props();
+  let { showName, candidates, onselect, oncancel }: Props = $props();
 
-  let selectedId = $state<number | null>(null);
+  let selected = $state<ShowCandidate | null>(null);
 
   function posterUrl(path: string | null): string | null {
     if (!path) return null;
@@ -19,18 +20,6 @@
     return date.substring(0, 4);
   }
 
-  function handleSelect(candidate: ShowCandidate) {
-    selectedId = candidate.id;
-  }
-
-  function handleConfirm() {
-    const selected = candidates.find((c) => c.id === selectedId) ?? null;
-    onselect(selected);
-  }
-
-  function handleSkip() {
-    onselect(null);
-  }
 </script>
 
 <div class="show-selector">
@@ -43,8 +32,8 @@
     {#each candidates as candidate}
       <button
         class="candidate-card"
-        class:selected={selectedId === candidate.id}
-        onclick={() => handleSelect(candidate)}
+        class:selected={selected?.id === candidate.id}
+        onclick={() => (selected = candidate)}
       >
         <div class="poster">
           {#if posterUrl(candidate.poster_path)}
@@ -75,11 +64,16 @@
     {/each}
   </div>
 
-  <div class="actions">
-    <button class="btn-skip" onclick={handleSkip}>Skip</button>
-    <button class="btn-confirm" onclick={handleConfirm} disabled={selectedId === null}>
-      Use Selected
-    </button>
+  <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+    <button
+      style="background: transparent; border: 1px solid #555; color: #aaa; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 0.9rem;"
+      onclick={() => oncancel()}
+    >Cancel</button>
+    <button
+      style="background: {selected === null ? '#00d4ff66' : '#00d4ff'}; border: none; color: #0a0a1a; padding: 10px 24px; border-radius: 8px; cursor: {selected === null ? 'not-allowed' : 'pointer'}; font-size: 0.9rem; font-weight: 600;"
+      onclick={() => onselect(selected)}
+      disabled={selected === null}
+    >Use Selected</button>
   </div>
 </div>
 
@@ -199,45 +193,4 @@
     overflow: hidden;
   }
 
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    margin-top: 20px;
-  }
-
-  .btn-skip {
-    background: transparent;
-    border: 1px solid #555;
-    color: #aaa;
-    padding: 10px 24px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-
-  .btn-skip:hover {
-    border-color: #888;
-    color: #ccc;
-  }
-
-  .btn-confirm {
-    background: #00d4ff;
-    border: none;
-    color: #0a0a1a;
-    padding: 10px 24px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 600;
-  }
-
-  .btn-confirm:hover:not(:disabled) {
-    background: #33dfff;
-  }
-
-  .btn-confirm:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
 </style>

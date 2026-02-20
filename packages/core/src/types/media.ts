@@ -45,6 +45,7 @@ export interface TmdbMatchedItem {
   episodeNumberEnd?: number;
   episodeTitle?: string;
   searchRank: number;
+  seasonEpisodeCount?: number;
 }
 
 export interface ProbeResult {

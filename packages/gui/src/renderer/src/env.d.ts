@@ -46,6 +46,7 @@ interface MatchResultData {
     episodeNumber?: number;
     episodeNumberEnd?: number;
     episodeTitle?: string;
+    seasonEpisodeCount?: number;
   };
   confidence: number;
   newFilename: string;
