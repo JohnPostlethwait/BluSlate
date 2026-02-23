@@ -253,3 +253,31 @@ export const diskSpellingFiles: MediaFile[] = [
     sizeBytes: 3_800_000_000,
   },
 ];
+
+// Show-name prefixed Season/Disc directories (Star Trek TNG style)
+export const showPrefixedSeasonDiscFiles: MediaFile[] = [
+  {
+    filePath: '/media/shows/Star Trek TNG/Star Trek- The Next Generation Season 5 Disc 1/title_t00.mkv',
+    fileName: 'title_t00.mkv',
+    extension: '.mkv',
+    sizeBytes: 4_000_000_000,
+  },
+  {
+    filePath: '/media/shows/Star Trek TNG/Star Trek- The Next Generation Season 5 Disc 1/title_t01.mkv',
+    fileName: 'title_t01.mkv',
+    extension: '.mkv',
+    sizeBytes: 4_200_000_000,
+  },
+  {
+    filePath: '/media/shows/Star Trek TNG/Star Trek- The Next Generation Season 5 Disc 2/title_t00.mkv',
+    fileName: 'title_t00.mkv',
+    extension: '.mkv',
+    sizeBytes: 3_800_000_000,
+  },
+  {
+    filePath: '/media/shows/Star Trek TNG/Star Trek- The Next Generation Season 7 Disc 1/title_t00.mkv',
+    fileName: 'title_t00.mkv',
+    extension: '.mkv',
+    sizeBytes: 4_100_000_000,
+  },
+];

@@ -90,6 +90,20 @@ const api = {
     ipcRenderer.send('prompt:confirmShow:response', { selected });
   },
 
+  // Listen for DVDCompare selection prompt
+  onConfirmDvdCompare: (
+    callback: (data: { showName: string; candidates: unknown[] }) => void,
+  ): (() => void) => {
+    const handler = (_e: unknown, data: { showName: string; candidates: unknown[] }) => callback(data);
+    ipcRenderer.on('prompt:confirmDvdCompare', handler);
+    return () => ipcRenderer.removeListener('prompt:confirmDvdCompare', handler);
+  },
+
+  // Send DVDCompare selection response (array of selected results, or empty to skip)
+  respondConfirmDvdCompare: (selected: unknown[]): void => {
+    ipcRenderer.send('prompt:confirmDvdCompare:response', { selected });
+  },
+
   // Listen for pipeline completion
   onPipelineComplete: (callback: (data: { success: boolean }) => void): (() => void) => {
     const handler = (_e: unknown, data: { success: boolean }) => callback(data);

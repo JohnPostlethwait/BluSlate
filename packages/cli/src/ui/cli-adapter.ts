@@ -1,7 +1,6 @@
 import type { UIAdapter } from '@mediafetch/core';
 import { startSpinner, updateSpinner, succeedSpinner, failSpinner, stopSpinner } from './progress.js';
-import { confirmRenames } from './prompts.js';
-import { confirmShowIdentification } from './prompts.js';
+import { confirmRenames, confirmShowIdentification, confirmDvdCompareSelection } from './prompts.js';
 import { displayResults, displaySummary } from './display.js';
 
 export function createCliAdapter(): UIAdapter {
@@ -16,6 +15,7 @@ export function createCliAdapter(): UIAdapter {
     prompts: {
       confirmRenames,
       confirmShowIdentification,
+      confirmDvdCompareSelection,
     },
     display: {
       displayResults,

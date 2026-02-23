@@ -1,6 +1,6 @@
 import { confirm, select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
-import type { MatchResult, TmdbTvResult, TmdbClient } from '@mediafetch/core';
+import type { MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult } from '@mediafetch/core';
 import { editSingleMatch, displayReviewList, formatRuntimeMmSs } from './editor.js';
 import type { ReviewStatus } from './editor.js';
 import { displayResults } from './display.js';
@@ -257,6 +257,72 @@ export async function confirmShowIdentification(
   }
 
   return null;
+}
+
+/**
+ * Present DVDCompare search results to the user and ask them to select
+ * one or more disc releases for runtime matching.
+ * DVDCompare often has separate entries per season, so multi-select is supported.
+ * Returns selected results, or an empty array to skip.
+ */
+export async function confirmDvdCompareSelection(
+  showName: string,
+  candidates: DvdCompareSearchResult[],
+): Promise<DvdCompareSearchResult[]> {
+  if (candidates.length === 0) return [];
+
+  console.log(
+    `\n${chalk.cyan('DVDCompare results for:')} ${chalk.bold(showName)}`,
+  );
+  console.log(chalk.dim('  DVDCompare often has separate entries per season — you can select multiple.\n'));
+
+  const selected: DvdCompareSearchResult[] = [];
+  let done = false;
+
+  while (!done) {
+    const remaining = candidates.filter((c) => !selected.includes(c));
+
+    const choices = remaining.map((c) => {
+      const type = c.isBluray ? chalk.blue('Blu-ray') : chalk.yellow('DVD');
+      const years = c.years ? ` (${c.years})` : '';
+      return {
+        name: `${c.title}${years} — ${type}`,
+        value: c.fid,
+      };
+    });
+
+    if (selected.length > 0) {
+      choices.push({
+        name: chalk.green(`Done — use ${selected.length} selected release(s)`),
+        value: -2,
+      });
+    }
+
+    choices.push({
+      name: chalk.dim('Skip DVDCompare (use TMDb runtimes only)'),
+      value: -1,
+    });
+
+    const selectedNames = selected.map((s) => s.title).join(', ');
+    const message = selected.length > 0
+      ? `Select another release (selected: ${selectedNames}):`
+      : 'Select a DVDCompare disc release for episode runtime matching:';
+
+    const action = await select({ message, choices });
+
+    if (action === -1) return [];
+    if (action === -2) {
+      done = true;
+    } else {
+      const picked = candidates.find((c) => c.fid === action);
+      if (picked) selected.push(picked);
+
+      // If no more candidates left, we're done
+      if (selected.length === candidates.length) done = true;
+    }
+  }
+
+  return selected;
 }
 
 export async function promptForApiKey(): Promise<string> {

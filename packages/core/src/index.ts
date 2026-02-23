@@ -1,5 +1,5 @@
 // Core pipeline
-export { runPipeline } from './core/pipeline.js';
+export { runPipeline, detectPlayAllFiles } from './core/pipeline.js';
 
 // Parsers
 export { parseFilename } from './core/parser.js';
@@ -21,7 +21,8 @@ export {
 export type { IdentifiedShow, SeasonBatchResult, SpecialsBatchResult } from './core/batch-matcher.js';
 
 // Scoring
-export { computeConfidence, computeBatchConfidence } from './core/scorer.js';
+export { computeConfidence, computeBatchConfidence, computeBatchConfidenceBreakdown } from './core/scorer.js';
+export type { BatchConfidenceBreakdown, BatchConfidenceParams } from './core/scorer.js';
 
 // Scanner & Prober
 export { scanDirectory } from './core/scanner.js';
@@ -34,6 +35,20 @@ export { executeRenames, writeRenameLog } from './core/renamer.js';
 export { TmdbClient } from './api/tmdb-client.js';
 export { LRUCache } from './api/cache.js';
 export { RateLimiter } from './api/rate-limiter.js';
+export {
+  searchDvdCompare,
+  fetchDiscEpisodeData,
+  parseSearchResults,
+  parseComparisonPage,
+  matchFileRuntime,
+} from './api/dvdcompare-client.js';
+export type {
+  DvdCompareEpisode,
+  DvdCompareDisc,
+  DvdCompareResult,
+  DvdCompareSearchResult,
+  DvdCompareMatch,
+} from './api/dvdcompare-client.js';
 
 // Config
 export { loadApiKey, saveApiKey, buildConfig } from './config/config.js';
@@ -54,6 +69,7 @@ export type {
   MediaFile,
   ParsedFilename,
   MatchResult,
+  ConfidenceBreakdownItem,
   TmdbMatchedItem,
   ProbeResult,
   ProcessingResult,

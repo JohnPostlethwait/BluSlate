@@ -24,14 +24,29 @@ export interface ParsedFilename {
   airDate?: string;
 }
 
+export interface ConfidenceBreakdownItem {
+  label: string;
+  points: number;
+}
+
 export interface MatchResult {
   mediaFile: MediaFile;
   parsed: ParsedFilename;
   probeData?: ProbeResult;
   tmdbMatch?: TmdbMatchedItem;
   confidence: number;
+  confidenceBreakdown?: ConfidenceBreakdownItem[];
   newFilename: string;
   status: 'matched' | 'ambiguous' | 'unmatched';
+  warnings?: string[];
+  /** Source of the match: 'dvdcompare' for sub-second runtime matching, 'tmdb' for standard */
+  matchSource?: 'dvdcompare' | 'tmdb';
+  /** Whether DVDCompare disc data was available for this batch (may not match every file) */
+  dvdCompareUsed?: boolean;
+  /** DVDCompare episode runtime in seconds (to-the-second precision) */
+  dvdCompareRuntimeSeconds?: number;
+  /** DVDCompare episode title as listed on the disc */
+  dvdCompareTitle?: string;
 }
 
 export interface TmdbMatchedItem {
@@ -46,6 +61,11 @@ export interface TmdbMatchedItem {
   episodeTitle?: string;
   searchRank: number;
   seasonEpisodeCount?: number;
+  seasonEpisodes?: Array<{
+    episodeNumber: number;
+    episodeName: string;
+    runtime: number | null;
+  }>;
 }
 
 export interface ProbeResult {
@@ -76,6 +96,7 @@ export interface DirectoryContext {
   sourceHint?: string;
   showNameSource: string;
   seasonDiscSource?: string;
+  isExtras?: boolean;
 }
 
 export interface SeasonGroup {

@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient } from '@mediafetch/core';
+import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult } from '@mediafetch/core';
 
 /**
  * Create a UIAdapter that bridges core pipeline events to the Electron renderer
@@ -69,6 +69,21 @@ export function createGuiAdapter(mainWindow: BrowserWindow): UIAdapter {
           });
           ipcMain.once('prompt:confirmShow:response', (_event, { selected }) => {
             resolve(selected);
+          });
+        });
+      },
+
+      confirmDvdCompareSelection(
+        showName: string,
+        candidates: DvdCompareSearchResult[],
+      ): Promise<DvdCompareSearchResult[]> {
+        return new Promise((resolve) => {
+          mainWindow.webContents.send('prompt:confirmDvdCompare', {
+            showName,
+            candidates,
+          });
+          ipcMain.once('prompt:confirmDvdCompare:response', (_event, { selected }) => {
+            resolve(selected ?? []);
           });
         });
       },

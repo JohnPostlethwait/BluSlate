@@ -23,6 +23,8 @@ interface Window {
     respondConfirmRenames: (confirmed: MatchResultData[]) => void;
     onConfirmShow: (callback: (data: { showName: string; candidates: ShowCandidate[] }) => void) => () => void;
     respondConfirmShow: (selected: ShowCandidate | null) => void;
+    onConfirmDvdCompare: (callback: (data: { showName: string; candidates: DvdCompareCandidate[] }) => void) => () => void;
+    respondConfirmDvdCompare: (selected: DvdCompareCandidate[]) => void;
     onPipelineComplete: (callback: (data: { success: boolean }) => void) => () => void;
     onPipelineError: (callback: (data: { message: string }) => void) => () => void;
     onMenuOpenDirectory: (callback: (directory: string) => void) => () => void;
@@ -30,6 +32,11 @@ interface Window {
     saveApiKey: (apiKey: string) => Promise<void>;
     getRecentDirectories: () => Promise<string[]>;
   };
+}
+
+interface ConfidenceBreakdownItem {
+  label: string;
+  points: number;
 }
 
 interface MatchResultData {
@@ -47,10 +54,21 @@ interface MatchResultData {
     episodeNumberEnd?: number;
     episodeTitle?: string;
     seasonEpisodeCount?: number;
+    seasonEpisodes?: Array<{
+      episodeNumber: number;
+      episodeName: string;
+      runtime: number | null;
+    }>;
   };
   confidence: number;
+  confidenceBreakdown?: ConfidenceBreakdownItem[];
   newFilename: string;
   status: 'matched' | 'ambiguous' | 'unmatched';
+  warnings?: string[];
+  matchSource?: 'dvdcompare' | 'tmdb';
+  dvdCompareUsed?: boolean;
+  dvdCompareRuntimeSeconds?: number;
+  dvdCompareTitle?: string;
 }
 
 interface ShowCandidate {
@@ -63,4 +81,11 @@ interface ShowCandidate {
   vote_average: number;
   poster_path: string | null;
   origin_country: string[];
+}
+
+interface DvdCompareCandidate {
+  fid: number;
+  title: string;
+  years: string;
+  isBluray: boolean;
 }

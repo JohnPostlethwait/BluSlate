@@ -66,6 +66,51 @@ const SEASON_DISC_PATTERNS: Array<{
       sourceHint: m.input?.match(/BR|DVD|BD|BLURAY/i)?.[0]?.toUpperCase(),
     }),
   },
+
+  // ── Permissive patterns (match anywhere in segment with flexible separators) ──
+
+  // "Star Trek Season 5 Disc 1", "MODERN_FAMILY_SEASON1_DISC1"
+  {
+    regex: /Season[\s_-]*(\d{1,2})[\s_-]*(?:Disc|Disk|D)[\s_-]*(\d{1,2})/i,
+    extract: (m) => ({ season: parseInt(m[1], 10), disc: parseInt(m[2], 10) }),
+  },
+  // "Star Trek Season 5", "SHOW_SEASON02"
+  {
+    regex: /Season[\s_-]*(\d{1,2})(?=[\s_-]|$)/i,
+    extract: (m) => ({ season: parseInt(m[1], 10) }),
+  },
+  // "STAR TREK TNG S1 D3", "SHOW_S01_D02"
+  {
+    regex: /(?<![A-Za-z])S(\d{1,2})[\s_-]+D(\d{1,2})(?!\d)/i,
+    extract: (m) => ({ season: parseInt(m[1], 10), disc: parseInt(m[2], 10) }),
+  },
+  // "STAR TREK TNG S1" — standalone S# avoiding false positives in words like NCIS, DISC
+  {
+    regex: /(?<![A-Za-z])S(\d{1,2})(?!\d)/i,
+    extract: (m) => ({ season: parseInt(m[1], 10) }),
+  },
+];
+
+/**
+ * Directory names that indicate supplementary/bonus content.
+ * Files inside these directories bypass season matching entirely
+ * and go directly to the specials/extras candidate pool.
+ */
+const EXTRAS_DIRECTORY_PATTERNS: RegExp[] = [
+  /^extras?$/i,
+  /^bonus$/i,
+  /^bonus[\s_-]*features?$/i,
+  /^featurettes?$/i,
+  /^behind[\s_-]*the[\s_-]*scenes?$/i,
+  /^deleted[\s_-]*scenes?$/i,
+  /^special[\s_-]*features?$/i,
+  /^supplementa?l?s?$/i,
+  /^interviews?$/i,
+  /^trailers?$/i,
+  /^outtakes?$/i,
+  /^gag[\s_-]*reels?$/i,
+  /^bloopers?$/i,
+  /^making[\s_-]*of$/i,
 ];
 
 function isGenericFilename(fileName: string): boolean {
@@ -133,6 +178,18 @@ export function parseDirectoryContext(filePath: string, scanRoot: string): Direc
   // Walk directory segments looking for season/disc patterns.
   // Continue through all segments to accumulate context (e.g., "Season 1/Disc 1")
   const segments = relativePath.split(path.sep).filter(Boolean);
+
+  // Check if any path segment is an extras/bonus content directory.
+  // If so, flag it and do NOT assign a season — these files should
+  // bypass the sequential season matcher entirely.
+  for (const segment of segments) {
+    if (EXTRAS_DIRECTORY_PATTERNS.some((p) => p.test(segment.trim()))) {
+      logger.batch(`Directory context: show="${showName}", extras directory="${segment}"`);
+      context.isExtras = true;
+      return context;
+    }
+  }
+
   let matched = false;
 
   for (const segment of segments) {
@@ -178,13 +235,22 @@ export function groupFilesBySeason(files: MediaFile[], scanRoot: string): Map<st
     const context = parseDirectoryContext(file.filePath, scanRoot);
     if (!context) continue;
 
-    const season = context.season ?? 1;
-    const key = `${context.showName}::${season}`;
+    let key: string;
+    let season: number | undefined;
+
+    if (context.isExtras) {
+      // Extras files get their own group — they bypass season matching entirely
+      key = `${context.showName}::extras`;
+      season = undefined;
+    } else {
+      season = context.season ?? 1;
+      key = `${context.showName}::${season}`;
+    }
 
     let group = groups.get(key);
     if (!group) {
       group = {
-        directoryContext: { ...context, season },
+        directoryContext: { ...context, ...(season !== undefined ? { season } : {}) },
         files: [],
         probeResults: new Map(),
       };

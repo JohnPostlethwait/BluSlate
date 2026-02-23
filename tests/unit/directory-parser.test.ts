@@ -20,6 +20,7 @@ import {
   flatRipFiles,
   diskSpellingFiles,
   dvdVolumeLabelFiles,
+  showPrefixedSeasonDiscFiles,
 } from '../fixtures/directories.js';
 
 describe('shouldUseBatchMode', () => {
@@ -326,6 +327,260 @@ describe('parseDirectoryContext', () => {
     expect(context).not.toBeNull();
     expect(context!.sourceHint).toBe('DVD');
   });
+
+  // ── Show-name prefixed directory patterns (permissive) ────────────────
+
+  it('should extract season/disc from "Star Trek- The Next Generation Season 5 Disc 1"', () => {
+    const file = showPrefixedSeasonDiscFiles[0];
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Star Trek TNG');
+
+    expect(context).not.toBeNull();
+    expect(context!.showName).toBe('Star Trek TNG');
+    expect(context!.season).toBe(5);
+    expect(context!.disc).toBe(1);
+  });
+
+  it('should extract season/disc from "STAR TREK TNG S1 D3" (space between S and D)', () => {
+    const file = {
+      filePath: '/media/shows/Star Trek TNG/STAR TREK TNG S1 D3/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 4_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Star Trek TNG');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(1);
+    expect(context!.disc).toBe(3);
+  });
+
+  it('should extract season/disc from "MODERN_FAMILY_SEASON1_DISC1" (underscore separators)', () => {
+    const file = dvdVolumeLabelFiles[0];
+    const context = parseDirectoryContext(file.filePath, SCAN_ROOT);
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(1);
+    expect(context!.disc).toBe(1);
+  });
+
+  it('should extract season from show-prefixed "Season 7" without disc', () => {
+    const file = {
+      filePath: '/media/shows/Star Trek TNG/Star Trek- The Next Generation Season 7/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 4_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Star Trek TNG');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(7);
+    expect(context!.disc).toBeUndefined();
+  });
+
+  it('should extract season from "STAR TREK TNG S1" (standalone S# with show prefix)', () => {
+    const file = {
+      filePath: '/media/shows/Star Trek TNG/STAR TREK TNG S1/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 4_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Star Trek TNG');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(1);
+  });
+
+  it('should not extract false season from show name "NCIS" containing S', () => {
+    const file = {
+      filePath: '/media/shows/NCIS/random_subdir/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/NCIS');
+
+    expect(context).not.toBeNull();
+    // "random_subdir" has no season info, should default to season 1
+    expect(context!.season).toBe(1);
+  });
+
+  it('should extract season from "S.W.A.T. Season 2" via Season keyword, not S#', () => {
+    const file = {
+      filePath: '/media/shows/SWAT/S.W.A.T. Season 2/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/SWAT');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(2);
+  });
+
+  it('should extract season/disc from "SHOW_S01_D02" (underscore separators with S#_D#)', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/SHOW_S01_D02/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(1);
+    expect(context!.disc).toBe(2);
+  });
+
+  // ── Extras directory detection ─────────────────────────────────────
+
+  it('should detect "extras" directory and set isExtras flag', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/extras/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+    expect(context!.season).toBeUndefined();
+  });
+
+  it('should detect "Extras" directory (case-insensitive)', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Extras/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+    expect(context!.season).toBeUndefined();
+  });
+
+  it('should detect "Bonus Features" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Bonus Features/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+    expect(context!.season).toBeUndefined();
+  });
+
+  it('should detect "Special Features" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Special Features/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+    expect(context!.season).toBeUndefined();
+  });
+
+  it('should detect "Featurettes" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Featurettes/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+  });
+
+  it('should detect "Deleted Scenes" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Deleted Scenes/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+  });
+
+  it('should detect "Behind the Scenes" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Behind the Scenes/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+  });
+
+  it('should detect "Bloopers" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Bloopers/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+  });
+
+  it('should detect "Making Of" directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Making Of/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+  });
+
+  it('should detect extras nested under season directory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/Season 1/Special Features/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBe(true);
+    expect(context!.season).toBeUndefined();
+  });
+
+  it('should NOT set isExtras for non-extras subdirectory', () => {
+    const file = {
+      filePath: '/media/shows/MyShow/random_subdir/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 1000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/MyShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.isExtras).toBeUndefined();
+    expect(context!.season).toBe(1);
+  });
 });
 
 describe('groupFilesBySeason', () => {
@@ -401,6 +656,85 @@ describe('groupFilesBySeason', () => {
     expect(groups.size).toBe(1);
     expect(groups.has('Firefly::1')).toBe(true);
     expect(groups.get('Firefly::1')!.files.length).toBe(3);
+  });
+
+  // ── Show-name prefixed directory grouping ─────────────────────────────
+
+  it('should group extras directory files separately from season files', () => {
+    const files = [
+      {
+        filePath: '/media/shows/MyShow/S1D1/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/S1D1/title_t01.mkv',
+        fileName: 'title_t01.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/extras/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 500_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/extras/title_t01.mkv',
+        fileName: 'title_t01.mkv',
+        extension: '.mkv',
+        sizeBytes: 300_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/MyShow');
+
+    expect(groups.size).toBe(2);
+    expect(groups.has('MyShow::1')).toBe(true);
+    expect(groups.has('MyShow::extras')).toBe(true);
+    expect(groups.get('MyShow::1')!.files).toHaveLength(2);
+    expect(groups.get('MyShow::extras')!.files).toHaveLength(2);
+    expect(groups.get('MyShow::extras')!.directoryContext.isExtras).toBe(true);
+    expect(groups.get('MyShow::extras')!.directoryContext.season).toBeUndefined();
+  });
+
+  it('should merge extras from multiple directories into one extras group', () => {
+    const files = [
+      {
+        filePath: '/media/shows/MyShow/S1D1/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/extras/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 500_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/Bonus Features/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 300_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/MyShow');
+
+    expect(groups.size).toBe(2);
+    expect(groups.has('MyShow::extras')).toBe(true);
+    expect(groups.get('MyShow::extras')!.files).toHaveLength(2);
+  });
+
+  it('should group show-prefixed directory files into correct seasons', () => {
+    const groups = groupFilesBySeason(showPrefixedSeasonDiscFiles, '/media/shows/Star Trek TNG');
+
+    expect(groups.size).toBe(2);
+    expect(groups.has('Star Trek TNG::5')).toBe(true);
+    expect(groups.has('Star Trek TNG::7')).toBe(true);
+    // Season 5 has files from Disc 1 (2 files) + Disc 2 (1 file) = 3
+    expect(groups.get('Star Trek TNG::5')!.files.length).toBe(3);
+    expect(groups.get('Star Trek TNG::7')!.files.length).toBe(1);
   });
 });
 

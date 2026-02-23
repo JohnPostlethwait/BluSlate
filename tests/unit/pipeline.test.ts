@@ -105,6 +105,7 @@ function makeUIAdapter(): UIAdapter {
     prompts: {
       confirmRenames: vi.fn().mockResolvedValue([]),
       confirmShowIdentification: vi.fn(),
+      confirmDvdCompareSelection: vi.fn().mockResolvedValue([]),
     },
     display: {
       displayResults: vi.fn(),

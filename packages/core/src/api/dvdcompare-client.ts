@@ -1,0 +1,322 @@
+/**
+ * DVDCompare.net client — scrapes per-disc episode runtimes for Blu-ray releases.
+ *
+ * DVDCompare provides to-the-second runtimes for each episode on each disc,
+ * which allows definitive episode identification when TMDb's integer-minute
+ * runtimes are insufficient (e.g., when all episodes are ~46 min).
+ *
+ * Flow:
+ *   1. Search by show name → get list of comparison page IDs
+ *   2. Fetch comparison page → parse disc/episode/runtime data
+ *   3. Match file runtimes (to the millisecond) against DVDCompare runtimes
+ *      (to the second) for sub-second precision identification
+ */
+
+import { logger } from '../utils/logger.js';
+
+const BASE_URL = 'https://www.dvdcompare.net';
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+// ── Public types ─────────────────────────────────────────────────────
+
+export interface DvdCompareEpisode {
+  title: string;
+  runtimeSeconds: number;
+  runtimeFormatted: string; // "45:30" as it appears on the page
+}
+
+export interface DvdCompareDisc {
+  discNumber: number;
+  discLabel: string; // "DISC ONE", "DISC TWO", etc.
+  episodes: DvdCompareEpisode[];
+}
+
+export interface DvdCompareResult {
+  fid: number;
+  title: string;
+  discs: DvdCompareDisc[];
+}
+
+export interface DvdCompareSearchResult {
+  fid: number;
+  title: string;
+  years: string;
+  isBluray: boolean;
+}
+
+// ── Disc label → number mapping ──────────────────────────────────────
+
+const DISC_WORD_TO_NUMBER: Record<string, number> = {
+  ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5, SIX: 6,
+  SEVEN: 7, EIGHT: 8, NINE: 9, TEN: 10, ELEVEN: 11, TWELVE: 12,
+};
+
+function discLabelToNumber(label: string): number {
+  // "DISC ONE" → 1, "DISC 1" → 1
+  const word = label.replace(/^DISC\s+/i, '').trim().toUpperCase();
+  if (DISC_WORD_TO_NUMBER[word] !== undefined) return DISC_WORD_TO_NUMBER[word];
+  const num = parseInt(word, 10);
+  return isNaN(num) ? 0 : num;
+}
+
+// ── HTTP helpers ─────────────────────────────────────────────────────
+
+async function fetchPage(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    redirect: 'follow',
+  });
+
+  if (!response.ok) {
+    throw new Error(`DVDCompare fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.text();
+}
+
+async function postSearch(query: string): Promise<string> {
+  const response = await fetch(`${BASE_URL}/comparisons/search.php`, {
+    method: 'POST',
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `param=${encodeURIComponent(query)}&searchtype=text`,
+    redirect: 'follow',
+  });
+
+  if (!response.ok) {
+    throw new Error(`DVDCompare search failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.text();
+}
+
+// ── Parsers ──────────────────────────────────────────────────────────
+
+/**
+ * Parse search results HTML into structured results.
+ */
+export function parseSearchResults(html: string): DvdCompareSearchResult[] {
+  const results: DvdCompareSearchResult[] = [];
+
+  // Pattern: <a href="film.php?fid=12345">Title (YYYY-YYYY)</a>
+  // Use [\s\S]*? instead of .*? to handle multiline anchor text (DVDCompare sometimes
+  // wraps long titles across lines in the HTML source).
+  const linkPattern = /<a[^>]*href="(?:\/comparisons\/)?film\.php\?fid=(\d+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+
+  while ((match = linkPattern.exec(html)) !== null) {
+    const fid = parseInt(match[1], 10);
+    const rawText = match[2].replace(/<[^>]+>/g, '').trim();
+
+    // Extract title and years: "Show Name (YYYY-YYYY)" or "Show Name (YYYY)"
+    const titleMatch = rawText.match(/^(.+?)\s*\((\d{4}(?:-\d{4})?)\)\s*$/);
+    const title = titleMatch ? titleMatch[1].trim() : rawText;
+    const years = titleMatch ? titleMatch[2] : '';
+
+    // Check if it's a Blu-ray entry (indicated in the title or surrounding text)
+    const isBluray = /blu-?ray/i.test(rawText);
+
+    results.push({ fid, title, years, isBluray });
+  }
+
+  return results;
+}
+
+/**
+ * Parse a comparison page's HTML to extract per-disc episode data.
+ *
+ * Structure on the page:
+ *   <div class="description">
+ *     <b>DISC ONE</b>
+ *     Episodes (with Play All function)
+ *     - "Episode Title" (MM:SS)
+ *     ...
+ *     Episodic Promos
+ *     ...
+ *   </div>
+ */
+export function parseComparisonPage(html: string): DvdCompareDisc[] {
+  const discs: DvdCompareDisc[] = [];
+
+  // Split by disc headers: <b>DISC ONE</b>, <b>DISC TWO</b>, etc.
+  // Only match the FIRST occurrence of each disc (pages repeat data for each region)
+  const discPattern = /<b>(DISC\s+(?:ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|\d+))<\/b>(.*?)(?=<b>DISC\s|<b>BONUS\s|<\/div>)/gis;
+  const seenDiscs = new Set<string>();
+  let discMatch;
+
+  while ((discMatch = discPattern.exec(html)) !== null) {
+    const discLabel = discMatch[1].trim().toUpperCase();
+
+    // Only process the first occurrence (skip duplicate regional listings)
+    if (seenDiscs.has(discLabel)) continue;
+    seenDiscs.add(discLabel);
+
+    const discContent = discMatch[2];
+    const discNumber = discLabelToNumber(discLabel);
+    if (discNumber === 0) continue;
+
+    // Extract episodes from the "Episodes" section only (not promos/extras)
+    const episodes: DvdCompareEpisode[] = [];
+
+    // Split into lines and find the episodes section
+    const lines = discContent.split(/<br\s*\/?>/i);
+    let inEpisodesSection = false;
+
+    for (const line of lines) {
+      const cleaned = line.replace(/<[^>]+>/g, '').replace(/\r|\n/g, '').trim();
+
+      // Detect start of episodes section
+      if (/^Episodes?\b/i.test(cleaned) && !/Promo/i.test(cleaned)) {
+        inEpisodesSection = true;
+        continue;
+      }
+
+      // Detect end of episodes section (promos, featurettes, archives, etc.)
+      if (
+        inEpisodesSection &&
+        cleaned.length > 0 &&
+        !cleaned.startsWith('-') &&
+        !/^\(\d/.test(cleaned)
+      ) {
+        inEpisodesSection = false;
+        continue;
+      }
+
+      if (!inEpisodesSection) continue;
+
+      // Parse episode entry:
+      //   - "Episode Title" (MM:SS)             — no episode number
+      //   - 1 "Episode Title" (MM:SS)           — with episode number
+      //   - "Episode Title" (H:MM:SS)           — long-form runtime
+      // DVDCompare uses both numbered and unnumbered formats depending on the release.
+      const epMatch = cleaned.match(/^-\s*(?:\d+\s+)?"([^"]+)"\s*\((\d{1,3}:\d{2}(?::\d{2})?)\)/);
+      if (epMatch) {
+        const title = epMatch[1];
+        const runtimeFormatted = epMatch[2];
+
+        // Parse MM:SS or H:MM:SS to seconds
+        const parts = runtimeFormatted.split(':').map(Number);
+        const runtimeSeconds =
+          parts.length === 3
+            ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+            : parts[0] * 60 + parts[1];
+
+        episodes.push({ title, runtimeSeconds, runtimeFormatted });
+      }
+    }
+
+    if (episodes.length > 0) {
+      discs.push({ discNumber, discLabel, episodes });
+    }
+  }
+
+  // Sort by disc number
+  discs.sort((a, b) => a.discNumber - b.discNumber);
+
+  return discs;
+}
+
+// ── Public API ───────────────────────────────────────────────────────
+
+/**
+ * Search DVDCompare for a show by name.
+ * Returns search results, preferring Blu-ray entries.
+ */
+export async function searchDvdCompare(query: string): Promise<DvdCompareSearchResult[]> {
+  logger.batch(`DVDCompare: searching for "${query}"`);
+
+  try {
+    const html = await postSearch(query);
+    const results = parseSearchResults(html);
+
+    logger.batch(`DVDCompare: found ${results.length} result(s) (${results.filter((r) => r.isBluray).length} Blu-ray)`);
+
+    return results;
+  } catch (err) {
+    logger.warn(`DVDCompare search failed: ${err}`);
+    return [];
+  }
+}
+
+/**
+ * Fetch and parse disc/episode data from a DVDCompare comparison page.
+ */
+export async function fetchDiscEpisodeData(fid: number): Promise<DvdCompareResult | null> {
+  const url = `${BASE_URL}/comparisons/film.php?fid=${fid}`;
+  logger.batch(`DVDCompare: fetching comparison page fid=${fid}`);
+
+  try {
+    const html = await fetchPage(url);
+    const discs = parseComparisonPage(html);
+
+    if (discs.length === 0) {
+      logger.batch(`DVDCompare: no disc data found for fid=${fid}`);
+      return null;
+    }
+
+    // Extract title from page
+    const titleMatch = html.match(/<title[^>]*>.*?-\s*(.*?)(?:\s*\(|<\/title>)/i);
+    const title = titleMatch ? titleMatch[1].trim() : `fid=${fid}`;
+
+    const totalEpisodes = discs.reduce((sum, d) => sum + d.episodes.length, 0);
+    logger.batch(
+      `DVDCompare: parsed ${discs.length} disc(s), ${totalEpisodes} episode(s) for "${title}"`,
+    );
+
+    return { fid, title, discs };
+  } catch (err) {
+    logger.warn(`DVDCompare fetch failed for fid=${fid}: ${err}`);
+    return null;
+  }
+}
+
+// ── Runtime matching ─────────────────────────────────────────────────
+
+export interface DvdCompareMatch {
+  discNumber: number;
+  episodeIndex: number; // 0-based index within disc
+  episode: DvdCompareEpisode;
+  runtimeDiffSeconds: number;
+}
+
+/**
+ * Match a file's runtime (in seconds) against DVDCompare disc data.
+ * Returns the best match within a tolerance threshold, or null.
+ *
+ * Uses to-the-second precision: DVDCompare runtimes are rounded to the
+ * nearest second, and file runtimes from ffprobe are to the millisecond,
+ * so we expect sub-second differences for correct matches.
+ */
+export function matchFileRuntime(
+  fileDurationSeconds: number,
+  discs: DvdCompareDisc[],
+  toleranceSeconds: number = 3,
+  discConstraint?: number, // if set, only search this disc
+): DvdCompareMatch | null {
+  let bestMatch: DvdCompareMatch | null = null;
+  let bestDiff = Infinity;
+
+  for (const disc of discs) {
+    if (discConstraint !== undefined && disc.discNumber !== discConstraint) continue;
+
+    for (let i = 0; i < disc.episodes.length; i++) {
+      const ep = disc.episodes[i];
+      const diff = Math.abs(fileDurationSeconds - ep.runtimeSeconds);
+
+      if (diff < bestDiff && diff <= toleranceSeconds) {
+        bestDiff = diff;
+        bestMatch = {
+          discNumber: disc.discNumber,
+          episodeIndex: i,
+          episode: ep,
+          runtimeDiffSeconds: diff,
+        };
+      }
+    }
+  }
+
+  return bestMatch;
+}

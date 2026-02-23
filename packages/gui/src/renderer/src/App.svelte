@@ -5,10 +5,11 @@
   import ResultsTable from './lib/components/ResultsTable.svelte';
   import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
   import ShowSelector from './lib/components/ShowSelector.svelte';
+  import DvdCompareSelector from './lib/components/DvdCompareSelector.svelte';
   import SummaryPanel from './lib/components/SummaryPanel.svelte';
 
   // --- Reactive state ---
-  let currentView = $state<'setup' | 'running' | 'results' | 'confirm' | 'showSelect' | 'summary'>('setup');
+  let currentView = $state<'setup' | 'running' | 'results' | 'confirm' | 'showSelect' | 'dvdCompareSelect' | 'summary'>('setup');
   let progressEvent = $state<string>('');
   let progressMessage = $state<string>('');
   let matches = $state<MatchResultData[]>([]);
@@ -16,6 +17,7 @@
   let summaryData = $state<{ renamed: number; skipped: number; failed: number; dryRun: boolean } | null>(null);
   let errorMessage = $state<string>('');
   let showPrompt = $state<{ showName: string; candidates: ShowCandidate[] } | null>(null);
+  let dvdComparePrompt = $state<{ showName: string; candidates: DvdCompareCandidate[] } | null>(null);
 
   // Settings state
   let savedApiKey = $state<string>('');
@@ -31,6 +33,20 @@
 
   // Cleanup functions for IPC listeners
   let cleanups: (() => void)[] = [];
+
+  // Prevent Vite dev server HMR from doing a full page reload during active
+  // sessions. When the computer sleeps, the WebSocket connection drops and
+  // reconnects on wake — Vite may trigger a full reload which resets all
+  // $state() back to 'setup', losing the user's results.
+  if (import.meta.hot) {
+    import.meta.hot.on('vite:beforeFullReload', () => {
+      if (currentView !== 'setup') {
+        // Block the reload — throwing prevents Vite's client from calling
+        // location.reload(). The user's view and data are preserved.
+        throw '[MediaFetch] Blocked HMR full reload during active session';
+      }
+    });
+  }
 
   onMount(async () => {
     const api = window.api;
@@ -90,6 +106,14 @@
         if (ignoreEvents) return;
         showPrompt = data;
         currentView = 'showSelect';
+      }),
+    );
+
+    cleanups.push(
+      api.onConfirmDvdCompare((data) => {
+        if (ignoreEvents) return;
+        dvdComparePrompt = data;
+        currentView = 'dvdCompareSelect';
       }),
     );
 
@@ -160,6 +184,13 @@
     currentView = 'running';
   }
 
+  function handleDvdCompareSelect(selected: DvdCompareCandidate[]) {
+    // Unwrap Svelte 5 $state proxy so Electron IPC structured clone works
+    window.api.respondConfirmDvdCompare(JSON.parse(JSON.stringify(selected)));
+    dvdComparePrompt = null;
+    currentView = 'running';
+  }
+
   function handleReset() {
     // If we're leaving a prompt view, send an empty response so the main-process
     // pipeline Promise resolves and releases the pipelineRunning guard.
@@ -169,6 +200,9 @@
       ignoreEvents = true;
     } else if (currentView === 'showSelect') {
       window.api.respondConfirmShow(null);
+      ignoreEvents = true;
+    } else if (currentView === 'dvdCompareSelect') {
+      window.api.respondConfirmDvdCompare([]);
       ignoreEvents = true;
     }
 
@@ -207,6 +241,13 @@
       showName={showPrompt.showName}
       candidates={showPrompt.candidates}
       onselect={handleShowSelect}
+      oncancel={handleReset}
+    />
+  {:else if currentView === 'dvdCompareSelect' && dvdComparePrompt}
+    <DvdCompareSelector
+      showName={dvdComparePrompt.showName}
+      candidates={dvdComparePrompt.candidates}
+      onselect={handleDvdCompareSelect}
       oncancel={handleReset}
     />
   {:else if currentView === 'summary' && summaryData}

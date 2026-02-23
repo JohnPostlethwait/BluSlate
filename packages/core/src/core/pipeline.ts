@@ -5,6 +5,7 @@ import { findMatch } from './matcher.js';
 import { executeRenames, writeRenameLog } from './renamer.js';
 import { shouldUseBatchMode, groupFilesBySeason } from './directory-parser.js';
 import { identifyShow, classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch } from './batch-matcher.js';
+import { searchDvdCompare, fetchDiscEpisodeData } from '../api/dvdcompare-client.js';
 import { TmdbClient } from '../api/tmdb-client.js';
 import { logger } from '../utils/logger.js';
 import { FatalError } from '../errors.js';
@@ -14,6 +15,67 @@ import type { MatchResult, ParsedFilename, MediaFile, ClassifiedFile } from '../
 import type { UIAdapter } from '../types/ui-adapter.js';
 import type { IdentifiedShow } from './batch-matcher.js';
 import type { TmdbSeasonDetails } from '../types/tmdb.js';
+import type { DvdCompareDisc, DvdCompareResult } from '../api/dvdcompare-client.js';
+
+/**
+ * Detect potential "Play All" files — tracks that combine multiple episodes
+ * into a single file. Identified by having runtime or size significantly
+ * exceeding the median of other episode files in the group.
+ *
+ * Returns the set of file paths flagged as potential multi-episode concatenations.
+ */
+export function detectPlayAllFiles(
+  classified: ClassifiedFile[],
+): Set<string> {
+  const flagged = new Set<string>();
+
+  // Only consider files classified as episodes or unknown (extras are already excluded)
+  const candidates = classified.filter(
+    (f) => f.classification === 'episode' || f.classification === 'unknown',
+  );
+
+  if (candidates.length < 3) {
+    // Need at least 3 files to compute a meaningful median
+    return flagged;
+  }
+
+  // Compute median duration
+  const durations = candidates
+    .map((f) => f.durationMinutes)
+    .filter((d): d is number => d !== undefined)
+    .sort((a, b) => a - b);
+
+  const medianDuration = durations.length >= 3
+    ? durations[Math.floor(durations.length / 2)]
+    : 0;
+
+  // Compute median file size
+  const sizes = candidates
+    .map((f) => f.file.sizeBytes)
+    .sort((a, b) => a - b);
+
+  const medianSize = sizes[Math.floor(sizes.length / 2)];
+
+  for (const cf of candidates) {
+    const isRuntimeOutlier =
+      cf.durationMinutes !== undefined && medianDuration > 0 &&
+      cf.durationMinutes > medianDuration * 2.5;
+
+    const isSizeOutlier =
+      medianSize > 0 && cf.file.sizeBytes > medianSize * 3;
+
+    if (isRuntimeOutlier || isSizeOutlier) {
+      flagged.add(cf.file.filePath);
+      logger.batch(
+        `Potential "Play All" file detected: ${cf.file.fileName} ` +
+        `(duration: ${cf.durationMinutes?.toFixed(0) ?? '?'}min vs median ${medianDuration.toFixed(0)}min, ` +
+        `size: ${(cf.file.sizeBytes / 1e9).toFixed(1)}GB vs median ${(medianSize / 1e9).toFixed(1)}GB)`,
+      );
+    }
+  }
+
+  return flagged;
+}
 
 function progressText(current: number, total: number, fileName: string): string {
   return `[${current}/${total}] Processing: ${fileName}`;
@@ -180,8 +242,12 @@ async function runBatchPipeline(
   const showCache = new Map<string, IdentifiedShow | null>();
   // Cache Season 0 fetches to avoid redundant requests per show
   const season0Cache = new Map<number, TmdbSeasonDetails | null>();
+  // Cache DVDCompare disc data per show name (searched once per show)
+  const dvdCompareCache = new Map<string, DvdCompareDisc[] | null>();
   // Collect specials candidates per show for the second pass
   const specialsCandidates = new Map<string, { show: IdentifiedShow; candidates: ClassifiedFile[] }>();
+  // Track potential "Play All" files across all season groups
+  const allPlayAllFiles = new Set<string>();
 
   for (const [groupKey, group] of seasonGroups) {
     const showName = group.directoryContext.showName;
@@ -189,7 +255,10 @@ async function runBatchPipeline(
 
     try {
       // 1. Probe all files in this group for duration
-      ui.progress.start(`Probing ${group.files.length} files for ${showName} Season ${season}...`);
+      const probeLabel = group.directoryContext.isExtras
+        ? `Probing ${group.files.length} extras files for ${showName}...`
+        : `Probing ${group.files.length} files for ${showName} Season ${season}...`;
+      ui.progress.start(probeLabel);
       let probed = 0;
       for (const file of group.files) {
         probed++;
@@ -228,6 +297,90 @@ async function runBatchPipeline(
         continue;
       }
 
+      // 2b. Extras groups skip season matching entirely — send straight to specials candidates
+      if (group.directoryContext.isExtras) {
+        logger.info(`${showName}: extras directory — ${group.files.length} file(s) → specials candidates`);
+
+        const extrasClassified: ClassifiedFile[] = group.files.map((file) => {
+          const probeData = group.probeResults.get(file.filePath);
+          return {
+            file,
+            probeData,
+            classification: 'extra' as const,
+            durationMinutes: probeData?.durationMinutes,
+            sortOrder: 0,
+          };
+        });
+
+        const showSpecials = specialsCandidates.get(showName) ?? { show, candidates: [] };
+        showSpecials.candidates.push(...extrasClassified);
+        specialsCandidates.set(showName, showSpecials);
+        continue;
+      }
+
+      // 2c. Look up DVDCompare disc data for definitive episode identification
+      // (searched once per show name, cached; gracefully degrades if unavailable)
+      // DVDCompare often has separate entries per season (e.g., "S1 DVD", "S3 Blu-ray"),
+      // so we support multi-selection and merge disc data from all selected results.
+      let dvdCompareDiscs: DvdCompareDisc[] | null | undefined = dvdCompareCache.get(showName);
+      if (dvdCompareDiscs === undefined) {
+        // Not yet cached — search DVDCompare
+        try {
+          ui.progress.start(`Searching DVDCompare for "${showName}"...`);
+          const searchResults = await searchDvdCompare(showName);
+
+          if (searchResults.length > 0) {
+            ui.progress.succeed(
+              `DVDCompare: found ${searchResults.length} result(s) (${searchResults.filter((r) => r.isBluray).length} Blu-ray)`,
+            );
+
+            // Let the user select one or more DVDCompare results
+            const selectedResults = await ui.prompts.confirmDvdCompareSelection(showName, searchResults);
+
+            if (selectedResults.length > 0) {
+              // Fetch disc data from all selected results and merge
+              const allDiscs: DvdCompareDisc[] = [];
+
+              for (const selectedResult of selectedResults) {
+                logger.batch(
+                  `DVDCompare: fetching "${selectedResult.title}" (fid=${selectedResult.fid}, ` +
+                  `${selectedResult.isBluray ? 'Blu-ray' : 'DVD'})`,
+                );
+
+                ui.progress.start(`Fetching DVDCompare disc data for "${selectedResult.title}"...`);
+                const dvdData = await fetchDiscEpisodeData(selectedResult.fid);
+                if (dvdData?.discs) {
+                  allDiscs.push(...dvdData.discs);
+                }
+              }
+
+              dvdCompareDiscs = allDiscs.length > 0 ? allDiscs : null;
+
+              if (dvdCompareDiscs) {
+                const totalEps = dvdCompareDiscs.reduce((sum, d) => sum + d.episodes.length, 0);
+                ui.progress.succeed(
+                  `DVDCompare: ${selectedResults.length} release(s), ${dvdCompareDiscs.length} disc(s), ${totalEps} episode(s)`,
+                );
+              } else {
+                ui.progress.succeed(`DVDCompare: no disc data found in selected results`);
+              }
+            } else {
+              dvdCompareDiscs = null;
+              ui.progress.succeed(`DVDCompare: skipped by user`);
+            }
+          } else {
+            dvdCompareDiscs = null;
+            ui.progress.succeed(`DVDCompare: no results found`);
+          }
+        } catch (err) {
+          logger.warn(`DVDCompare lookup failed for "${showName}": ${err}`);
+          dvdCompareDiscs = null;
+          ui.progress.succeed(`DVDCompare: lookup failed (continuing without)`);
+        }
+
+        dvdCompareCache.set(showName, dvdCompareDiscs);
+      }
+
       // 3. Classify files as episodes vs extras
       const expectedRuntime = show.episodeRunTime.length > 0
         ? show.episodeRunTime[0]
@@ -235,15 +388,21 @@ async function runBatchPipeline(
 
       const classified = classifyAndSortFiles(group, expectedRuntime);
 
-      const episodeFiles = classified.filter((f) => f.classification === 'episode');
-      const extraFiles = classified.filter((f) => f.classification !== 'episode');
+      const episodeFiles = classified.filter((f) => f.classification === 'episode' || f.classification === 'unknown');
+      const extraFiles = classified.filter((f) => f.classification === 'extra');
 
       logger.info(
         `${showName} S${String(season).padStart(2, '0')}: ` +
         `${episodeFiles.length} episode(s), ${extraFiles.length} extra(s)`
       );
 
-      // 4. Match episodes to TMDb season
+      // 3b. Detect potential "Play All" multi-episode concatenation files
+      const playAllFiles = detectPlayAllFiles(classified);
+      for (const fp of playAllFiles) {
+        allPlayAllFiles.add(fp);
+      }
+
+      // 4. Match episodes to TMDb season (pass DVDCompare data when available)
       ui.progress.start(`Matching ${episodeFiles.length} episodes for ${showName} Season ${season}...`);
       const seasonResult = await matchSeasonBatch(
         client,
@@ -252,10 +411,18 @@ async function runBatchPipeline(
         show.showYear,
         season,
         episodeFiles,
-        true, // user confirmed
         config.template,
+        dvdCompareDiscs ?? undefined,
       );
       ui.progress.succeed(`Matched ${seasonResult.matched.filter(m => m.status === 'matched').length} episode(s)`);
+
+      // Mark all batch results with dvdCompareUsed so the UI always shows the
+      // DVDCompare column in batch mode. When DVDCompare data is available the
+      // individual matches will have dvdCompareRuntimeSeconds populated; when
+      // it's not available each row will show a "missing" chip instead.
+      for (const match of seasonResult.matched) {
+        match.dvdCompareUsed = true;
+      }
 
       allMatches.push(...seasonResult.matched);
 
@@ -300,7 +467,6 @@ async function runBatchPipeline(
         show.showName,
         show.showYear,
         candidates,
-        true, // user confirmed show
         config.template,
         season0Cache,
       );
@@ -341,6 +507,19 @@ async function runBatchPipeline(
           newFilename: candidate.file.fileName,
           status: 'unmatched',
         });
+      }
+    }
+  }
+
+  // Apply "Play All" warnings to final match results
+  if (allPlayAllFiles.size > 0) {
+    for (const match of allMatches) {
+      if (allPlayAllFiles.has(match.mediaFile.filePath)) {
+        if (!match.warnings) match.warnings = [];
+        match.warnings.push(
+          'Potential multi-episode "Play All" file: runtime or file size significantly ' +
+          'exceeds the median of other episode files in this season group.',
+        );
       }
     }
   }

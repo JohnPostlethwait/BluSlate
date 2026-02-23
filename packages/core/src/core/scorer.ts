@@ -1,5 +1,5 @@
 import { MediaType } from '../types/media.js';
-import type { ParsedFilename, TmdbMatchedItem, ProbeResult } from '../types/media.js';
+import type { ParsedFilename, TmdbMatchedItem, ProbeResult, ConfidenceBreakdownItem } from '../types/media.js';
 
 export function levenshteinDistance(a: string, b: string): number {
   const m = a.length;
@@ -106,65 +106,100 @@ export function computeConfidence(
   return Math.round(Math.min(100, Math.max(0, score)));
 }
 
-/**
- * Compute confidence for batch mode matching where show has been confirmed
- * by the user and episodes are matched by sequential position + runtime.
- */
-export function computeBatchConfidence(params: {
-  userConfirmedShow: boolean;
+export interface BatchConfidenceBreakdown {
+  total: number;
+  items: ConfidenceBreakdownItem[];
+}
+
+export type BatchConfidenceParams = {
   sequentialPositionMatch: boolean;
   runtimeDiffMinutes: number | undefined;
-  episodeExistsInTmdb: boolean;
   isSpecialsMatch?: boolean;
   tmdbRuntimeMinutes?: number;
   isMultiEpisodeMatch?: boolean;
   singleEpisodeRuntimeMinutes?: number;
-}): number {
+  isDvdCompareMatch?: boolean;
+  dvdCompareRuntimeDiffSeconds?: number;
+};
+
+/**
+ * Compute confidence for batch mode matching where episodes are matched
+ * by sequential position + runtime comparison. Returns both the total
+ * score and a line-item breakdown of each scoring factor.
+ *
+ * Scoring (max 100):
+ *   - Sequential position match: +40
+ *   - Runtime match: 0–60 (continuous per-minute deduction for regular, percentage for specials)
+ *   - Multi-episode penalty: -15
+ *   - Relative runtime penalty: -5 or -10
+ */
+export function computeBatchConfidenceBreakdown(params: BatchConfidenceParams): BatchConfidenceBreakdown {
   let score = 0;
+  const items: ConfidenceBreakdownItem[] = [];
 
-  // User confirmed show (0 or 30 points)
-  if (params.userConfirmedShow) {
-    score += 30;
+  // DVDCompare definitive match — bypass normal scoring
+  // Sub-second runtime matching against DVDCompare's to-the-second data
+  // provides near-certain episode identification
+  if (params.isDvdCompareMatch) {
+    const diffSeconds = params.dvdCompareRuntimeDiffSeconds ?? 0;
+    const dvdPoints = diffSeconds <= 1 ? 95 : 90;
+    items.push({
+      label: `DVDCompare match (±${diffSeconds.toFixed(1)}s)`,
+      points: dvdPoints,
+    });
+    if (params.isMultiEpisodeMatch) {
+      items.push({ label: 'Multi-episode match', points: -5 });
+      return { total: Math.max(0, dvdPoints - 5), items };
+    }
+    return { total: dvdPoints, items };
   }
 
-  // Sequential position match (0 or 25 points)
+  // Sequential position match (0 or 40 points)
   if (params.sequentialPositionMatch) {
-    score += 25;
+    score += 40;
+    items.push({ label: 'Sequential position match', points: 40 });
+  } else {
+    items.push({ label: 'No sequential position match', points: 0 });
   }
 
-  // Runtime match (0-35 points)
+  // Runtime match (0-60 points)
   if (params.runtimeDiffMinutes !== undefined) {
     if (params.isSpecialsMatch && params.tmdbRuntimeMinutes) {
       // Specials: use percentage-based thresholds (more forgiving for variable runtimes)
       const pctDiff = (params.runtimeDiffMinutes / params.tmdbRuntimeMinutes) * 100;
+      const diffLabel = `±${Math.round(params.runtimeDiffMinutes)}min (${Math.round(pctDiff)}%)`;
       if (pctDiff <= 5) {
-        score += 35;
+        score += 60;
+        items.push({ label: `Runtime match ${diffLabel}`, points: 60 });
       } else if (pctDiff <= 10) {
-        score += 25;
+        score += 45;
+        items.push({ label: `Runtime close ${diffLabel}`, points: 45 });
       } else if (pctDiff <= 15) {
-        score += 15;
+        score += 25;
+        items.push({ label: `Runtime diff ${diffLabel}`, points: 25 });
+      } else {
+        items.push({ label: `Runtime diff ${diffLabel}`, points: 0 });
       }
     } else {
-      // Regular episodes: absolute minute thresholds
-      if (params.runtimeDiffMinutes <= 3) {
-        score += 35;
-      } else if (params.runtimeDiffMinutes <= 5) {
-        score += 25;
-      } else if (params.runtimeDiffMinutes <= 10) {
-        score += 15;
+      // Regular episodes: continuous per-minute deduction from 60-point max.
+      // Each minute of runtime difference costs 1 point (e.g., 3min diff → 57pts → 97% total).
+      const diffLabel = `±${Math.round(params.runtimeDiffMinutes)}min`;
+      const runtimePoints = Math.round(Math.max(0, 60 - params.runtimeDiffMinutes));
+      if (runtimePoints > 0) {
+        score += runtimePoints;
+        items.push({ label: `Runtime match ${diffLabel}`, points: runtimePoints });
+      } else {
+        items.push({ label: `Runtime diff ${diffLabel}`, points: 0 });
       }
-      // > 10min = 0 points
     }
-  }
-
-  // Episode exists in TMDb (0 or 10 points)
-  if (params.episodeExistsInTmdb) {
-    score += 10;
+  } else {
+    items.push({ label: 'Runtime: no data', points: 0 });
   }
 
   // Multi-episode penalty: combining episodes is a heuristic guess
   if (params.isMultiEpisodeMatch) {
-    score -= 10;
+    score -= 15;
+    items.push({ label: 'Multi-episode match', points: -15 });
   }
 
   // Relative runtime penalty: penalize when runtime diff is large relative to episode length
@@ -178,10 +213,20 @@ export function computeBatchConfidence(params: {
     const relativePct = (params.runtimeDiffMinutes / params.singleEpisodeRuntimeMinutes) * 100;
     if (relativePct > 15) {
       score -= 10;
+      items.push({ label: `Runtime >${Math.round(relativePct)}% of episode`, points: -10 });
     } else if (relativePct > 10) {
       score -= 5;
+      items.push({ label: `Runtime >${Math.round(relativePct)}% of episode`, points: -5 });
     }
   }
 
-  return Math.round(Math.min(100, Math.max(0, score)));
+  const total = Math.round(Math.min(100, Math.max(0, score)));
+  return { total, items };
+}
+
+/**
+ * Convenience wrapper that returns just the numeric score.
+ */
+export function computeBatchConfidence(params: BatchConfidenceParams): number {
+  return computeBatchConfidenceBreakdown(params).total;
 }

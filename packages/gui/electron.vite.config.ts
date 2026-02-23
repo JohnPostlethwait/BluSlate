@@ -4,7 +4,7 @@ import path from 'node:path';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ['@mediafetch/core'] })],
     resolve: {
       alias: {
         '@mediafetch/core': path.resolve(__dirname, '../core/src/index.ts'),
