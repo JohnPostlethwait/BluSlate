@@ -1,14 +1,56 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import { runPipeline, buildConfig } from '@mediafetch/core';
+import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable } from '@mediafetch/core';
+
+// Packaged macOS .app bundles inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
+// that doesn't include Homebrew paths where ffprobe typically lives.
+// Prepend common binary locations as a fallback for system-installed ffprobe.
+if (!is.dev) {
+  const extraPaths =
+    process.platform === 'darwin'
+      ? ['/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin']
+      : ['/usr/local/bin', '/snap/bin'];
+  process.env.PATH = [...extraPaths, process.env.PATH].join(process.platform === 'win32' ? ';' : ':');
+}
+
 import { createGuiAdapter } from './gui-adapter.js';
 import { loadSettings, saveSettings, addRecentDirectory } from './settings.js';
 import type { AppSettings } from './settings.js';
 import { validatePipelineOptions, sanitizeErrorMessage, MAX_API_KEY_LENGTH } from './validation.js';
 
+/**
+ * Resolve the ffprobe binary: bundled in app resources (production) →
+ * npm package (dev) → system PATH (fallback).
+ */
+function resolveFfprobePath(): string | null {
+  if (!is.dev) {
+    // Packaged app: binary was copied to resources/bin/ by afterPack hook
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    const bundledPath = join(process.resourcesPath, 'bin', `ffprobe${ext}`);
+    if (existsSync(bundledPath)) {
+      return bundledPath;
+    }
+  }
+
+  // Dev mode or bundled binary missing: try resolving from npm package
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+    if (ffprobeInstaller.path && existsSync(ffprobeInstaller.path)) {
+      return ffprobeInstaller.path;
+    }
+  } catch {
+    // Package not installed — fall back to system PATH
+  }
+
+  return null;
+}
+
 let currentSettings: AppSettings = { recentDirectories: [] };
+let ffprobeReady = false;
 
 function createWindow(): BrowserWindow {
   // Restore saved window bounds
@@ -71,6 +113,13 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
+  // Configure bundled ffprobe binary (must happen before any pipeline run)
+  const ffprobeBinaryPath = resolveFfprobePath();
+  if (ffprobeBinaryPath) {
+    setFfprobePath(ffprobeBinaryPath);
+  }
+  ffprobeReady = await isFfprobeAvailable();
+
   // Load saved settings before creating the window
   currentSettings = await loadSettings();
 
@@ -167,6 +216,9 @@ app.whenReady().then(async () => {
 
   // --- IPC Handlers ---
 
+  // ffprobe availability check (cached at startup)
+  ipcMain.handle('ffprobe:check', () => ffprobeReady);
+
   // Directory picker
   ipcMain.handle('dialog:selectDirectory', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -199,6 +251,13 @@ app.whenReady().then(async () => {
 
   // Run the rename pipeline (with full input validation)
   let pipelineRunning = false;
+  let currentAdapter: import('./gui-adapter.js').CancellableGuiAdapter | null = null;
+
+  ipcMain.on('pipeline:cancel', () => {
+    if (currentAdapter) {
+      currentAdapter.cancel();
+    }
+  });
 
   ipcMain.on(
     'pipeline:start',
@@ -207,6 +266,7 @@ app.whenReady().then(async () => {
       pipelineRunning = true;
 
       const ui = createGuiAdapter(mainWindow);
+      currentAdapter = ui;
 
       try {
         // Validate all inputs from the renderer
@@ -244,10 +304,16 @@ app.whenReady().then(async () => {
         await runPipeline(config, ui);
         mainWindow.webContents.send('pipeline:complete', { success: true });
       } catch (err) {
-        const message = sanitizeErrorMessage(err);
-        mainWindow.webContents.send('pipeline:error', { message });
+        if ((err as Error).name === 'PipelineCancelledError') {
+          // User cancelled — send completion (not error) so renderer resets cleanly
+          mainWindow.webContents.send('pipeline:complete', { success: false });
+        } else {
+          const message = sanitizeErrorMessage(err);
+          mainWindow.webContents.send('pipeline:error', { message });
+        }
       } finally {
         pipelineRunning = false;
+        currentAdapter = null;
       }
     },
   );

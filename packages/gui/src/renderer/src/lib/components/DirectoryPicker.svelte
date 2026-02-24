@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+
   interface Props {
     onstart: (event: { directory: string; apiKey: string; recursive: boolean; dryRun: boolean }) => void;
     initialDirectory?: string;
@@ -12,6 +14,15 @@
   let recursive = $state(false);
   let dryRun = $state(false);
   let isDragOver = $state(false);
+  let ffprobeAvailable = $state<boolean | null>(null);
+
+  onMount(async () => {
+    try {
+      ffprobeAvailable = await window.api.checkFfprobe();
+    } catch {
+      ffprobeAvailable = false;
+    }
+  });
 
   // Sync with initial values when they load asynchronously (e.g. from saved settings)
   $effect(() => {
@@ -73,6 +84,21 @@
   role="region"
   aria-label="Media directory picker"
 >
+  {#if ffprobeAvailable === false}
+    <div class="ffprobe-warning">
+      <span class="warning-icon">&#9888;</span>
+      <div>
+        <strong>ffprobe not found</strong>
+        <p>
+          File durations cannot be detected. Batch matching (disc rips) will be
+          severely degraded. Install
+          <a href="https://ffmpeg.org/download.html" target="_blank">ffmpeg</a>
+          for best results.
+        </p>
+      </div>
+    </div>
+  {/if}
+
   <div class="field">
     <label for="directory">Media Directory</label>
     <div class="input-row">
@@ -136,6 +162,46 @@
   .picker.drag-over {
     border-color: #00d4ff;
     background: #1a2a4a;
+  }
+
+  .ffprobe-warning {
+    background: #3a3000;
+    border: 1px solid #ffb300;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .ffprobe-warning .warning-icon {
+    color: #ffb300;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .ffprobe-warning strong {
+    color: #ffb300;
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+  }
+
+  .ffprobe-warning p {
+    margin: 0;
+    color: #ccc;
+    font-size: 0.8rem;
+  }
+
+  .ffprobe-warning a {
+    color: #00d4ff;
+    text-decoration: none;
+  }
+
+  .ffprobe-warning a:hover {
+    text-decoration: underline;
   }
 
   .field {

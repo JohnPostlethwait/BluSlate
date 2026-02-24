@@ -657,3 +657,101 @@ describe('matchFileRuntime', () => {
     });
   });
 });
+
+// ── parseComparisonPage: special character handling ──────────────────
+
+describe('parseComparisonPage — special character normalization', () => {
+  it('should parse episodes with Unicode curly quotes (\u201C \u201D)', () => {
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        Episodes<br>
+        - \u201CThe Child\u201D (45:31)<br>
+        - \u201CWhere Silence Has Lease\u201D (45:44)<br>
+        - \u201CElementary, Dear Data\u201D (45:39)<br>
+      </div>
+    `;
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(1);
+    expect(discs[0].episodes).toHaveLength(3);
+    expect(discs[0].episodes[0].title).toBe('The Child');
+    expect(discs[0].episodes[0].runtimeSeconds).toBe(45 * 60 + 31);
+    expect(discs[0].episodes[1].title).toBe('Where Silence Has Lease');
+    expect(discs[0].episodes[2].title).toBe('Elementary, Dear Data');
+  });
+
+  it('should parse episodes with U+FFFD replacement characters (encoding failures)', () => {
+    // When Windows-1252 curly quotes (0x93/0x94) are decoded as UTF-8,
+    // they become U+FFFD replacement characters
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        Episodes<br>
+        - \ufffdThe Child\ufffd (45:31)<br>
+        - \ufffdLoud as a Whisper\ufffd (45:24)<br>
+      </div>
+    `;
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(1);
+    expect(discs[0].episodes).toHaveLength(2);
+    expect(discs[0].episodes[0].title).toBe('The Child');
+    expect(discs[0].episodes[1].title).toBe('Loud as a Whisper');
+  });
+
+  it('should parse episodes with mixed straight and curly quotes', () => {
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        Episodes<br>
+        - "Straight Quotes" (22:00)<br>
+        - \u201CCurly Quotes\u201D (23:00)<br>
+        - \ufffdReplacement Chars\ufffd (24:00)<br>
+      </div>
+    `;
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(1);
+    expect(discs[0].episodes).toHaveLength(3);
+    expect(discs[0].episodes[0].title).toBe('Straight Quotes');
+    expect(discs[0].episodes[1].title).toBe('Curly Quotes');
+    expect(discs[0].episodes[2].title).toBe('Replacement Chars');
+  });
+
+  it('should parse episodes with ISO-8859-1 control char quotes (U+0093/U+0094)', () => {
+    // When charset=iso-8859-1 is declared, bytes 0x93/0x94 are decoded as
+    // Unicode control characters U+0093/U+0094 instead of curly quotes.
+    // normalizeText must handle these.
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        Episodes<br>
+        - \u0093The Child\u0094 (45:31)<br>
+        - \u0093Where Silence Has Lease\u0094 (45:44)<br>
+        - \u0093Elementary, Dear Data\u0094 (45:39)<br>
+      </div>
+    `;
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(1);
+    expect(discs[0].episodes).toHaveLength(3);
+    expect(discs[0].episodes[0].title).toBe('The Child');
+    expect(discs[0].episodes[0].runtimeSeconds).toBe(45 * 60 + 31);
+    expect(discs[0].episodes[1].title).toBe('Where Silence Has Lease');
+    expect(discs[0].episodes[2].title).toBe('Elementary, Dear Data');
+  });
+
+  it('should handle en dashes and em dashes in episode titles', () => {
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        Episodes<br>
+        - "Part 1 \u2013 The Beginning" (45:00)<br>
+        - "Part 2 \u2014 The End" (46:00)<br>
+      </div>
+    `;
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(1);
+    expect(discs[0].episodes).toHaveLength(2);
+    // Dashes are normalized to hyphens
+    expect(discs[0].episodes[0].title).toBe('Part 1 - The Beginning');
+    expect(discs[0].episodes[1].title).toBe('Part 2 - The End');
+  });
+});

@@ -191,6 +191,14 @@
     currentView = 'running';
   }
 
+  function handleCancel() {
+    window.api.cancelPipeline();
+    ignoreEvents = true;
+    currentView = 'setup';
+    progressMessage = '';
+    progressEvent = '';
+  }
+
   function handleReset() {
     // If we're leaving a prompt view, send an empty response so the main-process
     // pipeline Promise resolves and releases the pipelineRunning guard.
@@ -231,7 +239,7 @@
   {#if currentView === 'setup'}
     <DirectoryPicker onstart={handleStart} initialDirectory={savedDirectory} initialApiKey={savedApiKey} />
   {:else if currentView === 'running'}
-    <ProgressBar event={progressEvent} message={progressMessage} />
+    <ProgressBar event={progressEvent} message={progressMessage} oncancel={handleCancel} />
   {:else if currentView === 'results'}
     <ResultsTable {matches} {scanDirectory} />
   {:else if currentView === 'confirm'}

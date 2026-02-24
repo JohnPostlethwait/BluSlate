@@ -1,7 +1,8 @@
 import { Command } from 'commander';
-import { buildConfig, saveApiKey } from '@mediafetch/core';
+import { buildConfig, saveApiKey, setFfprobePath, isFfprobeAvailable } from '@mediafetch/core';
 import { runPipeline } from '@mediafetch/core';
 import { setVerbose } from '@mediafetch/core';
+import chalk from 'chalk';
 import { promptForApiKey } from './ui/prompts.js';
 import { createCliAdapter } from './ui/cli-adapter.js';
 
@@ -43,6 +44,26 @@ Examples:
   $ mediafetch --template '{show_name} {season}x{episode}' /media/tv`)
     .action(async (directory: string, options: Record<string, unknown>) => {
       if (options['verbose']) setVerbose(true);
+
+      // Try to use bundled ffprobe from @ffprobe-installer/ffprobe
+      try {
+        const { path: ffprobeBinPath } = await import('@ffprobe-installer/ffprobe');
+        if (ffprobeBinPath) {
+          setFfprobePath(ffprobeBinPath);
+        }
+      } catch {
+        // Package not available — will try system ffprobe via PATH
+      }
+
+      // Warn early if ffprobe is unavailable
+      const ffprobeOk = await isFfprobeAvailable();
+      if (!ffprobeOk) {
+        console.error(
+          chalk.yellow('\n  ⚠  ffprobe not found. File durations cannot be detected.') +
+          chalk.yellow('\n     Batch matching (disc rips) will be severely degraded.') +
+          chalk.yellow('\n     Install ffmpeg: https://ffmpeg.org/download.html\n'),
+        );
+      }
 
       try {
         const config = await buildConfig({

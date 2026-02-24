@@ -60,7 +60,76 @@ function discLabelToNumber(label: string): number {
   return isNaN(num) ? 0 : num;
 }
 
+// ── Text normalization ────────────────────────────────────────────────
+
+/**
+ * Normalize Unicode characters that cause parsing failures.
+ *
+ * DVDCompare pages often use Windows-1252 curly quotes (bytes 0x93/0x94).
+ * Depending on how the response is decoded, these may appear as:
+ *   - U+201C/U+201D (proper curly quotes from windows-1252 decoding)
+ *   - U+0093/U+0094 (control chars from iso-8859-1 decoding)
+ *   - U+FFFD (replacement chars from failed UTF-8 decoding)
+ * Our episode regex expects straight ASCII quotes, so all variants
+ * must be normalized.
+ */
+function normalizeText(text: string): string {
+  return text
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')  // curly double quotes → straight
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")   // curly single quotes → straight
+    .replace(/[\u0093\u0094]/g, '"')               // ISO-8859-1 control chars (Windows-1252 curly double quotes)
+    .replace(/[\u0091\u0092]/g, "'")               // ISO-8859-1 control chars (Windows-1252 curly single quotes)
+    .replace(/\u2013/g, '\u002D')                   // en dash → hyphen-minus
+    .replace(/\u2014/g, '\u002D')                   // em dash → hyphen-minus
+    .replace(/\u2026/g, '...')                      // horizontal ellipsis → three dots
+    .replace(/\ufffd/g, '"');                        // replacement char → straight quote (common encoding failure)
+}
+
 // ── HTTP helpers ─────────────────────────────────────────────────────
+
+/**
+ * Decode an HTTP response body with charset detection.
+ *
+ * DVDCompare pages declare charset=iso-8859-1 but use Windows-1252
+ * characters (curly quotes 0x93/0x94) in the 0x80-0x9F range. Per the
+ * WHATWG Encoding Standard, iso-8859-1 labels must be treated as
+ * windows-1252 — all browsers do this because virtually all content
+ * labeled iso-8859-1 actually uses Windows-1252 extensions.
+ *
+ * Without this remapping, TextDecoder('iso-8859-1') maps 0x93/0x94 to
+ * Unicode control characters U+0093/U+0094 instead of curly quotes
+ * U+201C/U+201D, causing normalizeText() to miss them.
+ */
+async function decodeResponse(response: Response): Promise<string> {
+  const buffer = await response.arrayBuffer();
+  const contentType = response.headers.get('content-type') || '';
+  const charsetMatch = contentType.match(/charset=([^\s;]+)/i);
+  let charset = charsetMatch?.[1]?.toLowerCase() || 'utf-8';
+
+  // Per WHATWG Encoding Standard: iso-8859-1 label maps to windows-1252
+  if (charset === 'iso-8859-1' || charset === 'latin1' || charset === 'iso_8859-1') {
+    charset = 'windows-1252';
+  }
+
+  let text: string;
+  try {
+    text = new TextDecoder(charset).decode(buffer);
+  } catch {
+    // Unknown charset label — fall back to UTF-8
+    text = new TextDecoder('utf-8').decode(buffer);
+  }
+
+  // If UTF-8 decoding produced replacement characters, retry as windows-1252
+  if (text.includes('\ufffd')) {
+    try {
+      text = new TextDecoder('windows-1252').decode(buffer);
+    } catch {
+      // windows-1252 not available — keep the UTF-8 result
+    }
+  }
+
+  return normalizeText(text);
+}
 
 async function fetchPage(url: string): Promise<string> {
   const response = await fetch(url, {
@@ -72,7 +141,7 @@ async function fetchPage(url: string): Promise<string> {
     throw new Error(`DVDCompare fetch failed: ${response.status} ${response.statusText}`);
   }
 
-  return response.text();
+  return decodeResponse(response);
 }
 
 async function postSearch(query: string): Promise<string> {
@@ -90,7 +159,7 @@ async function postSearch(query: string): Promise<string> {
     throw new Error(`DVDCompare search failed: ${response.status} ${response.statusText}`);
   }
 
-  return response.text();
+  return decodeResponse(response);
 }
 
 // ── Parsers ──────────────────────────────────────────────────────────
@@ -140,6 +209,11 @@ export function parseSearchResults(html: string): DvdCompareSearchResult[] {
  */
 export function parseComparisonPage(html: string): DvdCompareDisc[] {
   const discs: DvdCompareDisc[] = [];
+
+  // Normalize text upfront to handle curly quotes, en/em dashes, etc.
+  // This ensures parsing works regardless of whether the HTML came through
+  // decodeResponse() (live) or was passed directly (tests).
+  html = normalizeText(html);
 
   // Split by disc headers: <b>DISC ONE</b>, <b>DISC TWO</b>, etc.
   // Only match the FIRST occurrence of each disc (pages repeat data for each region)

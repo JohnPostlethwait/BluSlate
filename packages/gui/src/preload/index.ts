@@ -6,6 +6,11 @@ const api = {
   // Directory picker
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectDirectory'),
 
+  // Cancel a running pipeline
+  cancelPipeline: (): void => {
+    ipcRenderer.send('pipeline:cancel');
+  },
+
   // Start the pipeline
   startPipeline: (options: {
     directory: string;
@@ -124,6 +129,9 @@ const api = {
     ipcRenderer.on('menu:openDirectory', handler);
     return () => ipcRenderer.removeListener('menu:openDirectory', handler);
   },
+
+  // ffprobe availability
+  checkFfprobe: (): Promise<boolean> => ipcRenderer.invoke('ffprobe:check'),
 
   // Settings
   loadSettings: (): Promise<{ apiKey?: string; recentDirectories: string[] }> =>

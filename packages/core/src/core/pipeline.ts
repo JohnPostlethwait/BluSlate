@@ -11,11 +11,11 @@ import { logger } from '../utils/logger.js';
 import { FatalError } from '../errors.js';
 import { MediaType } from '../types/media.js';
 import type { AppConfig } from '../types/config.js';
-import type { MatchResult, ParsedFilename, MediaFile, ClassifiedFile } from '../types/media.js';
+import type { MatchResult, ParsedFilename, MediaFile, ClassifiedFile, DirectoryContext } from '../types/media.js';
 import type { UIAdapter } from '../types/ui-adapter.js';
 import type { IdentifiedShow } from './batch-matcher.js';
 import type { TmdbSeasonDetails } from '../types/tmdb.js';
-import type { DvdCompareDisc, DvdCompareResult } from '../api/dvdcompare-client.js';
+import type { DvdCompareDisc } from '../api/dvdcompare-client.js';
 
 /**
  * Detect potential "Play All" files — tracks that combine multiple episodes
@@ -226,6 +226,18 @@ async function runPerFilePipeline(
 /**
  * Batch pipeline — groups files by directory structure, identifies shows,
  * classifies files by runtime, and matches episodes sequentially.
+ *
+ * Processing is split into sequential phases so that all user-interactive
+ * steps (show identification + DVDCompare selection) complete before the
+ * potentially slow ffprobe scanning begins:
+ *
+ *   Phase 1: Group files by directory structure
+ *   Phase 2: Identify shows via TMDb (user confirms each)
+ *   Phase 3: DVDCompare lookup (user selects releases)
+ *   Phase 4: Probe all files with ffprobe (single progress bar)
+ *   Phase 5: Classify + match per season group
+ *   Phase 6: Match specials (Season 0)
+ *   Phase 7: Apply "Play All" warnings
  */
 async function runBatchPipeline(
   config: AppConfig,
@@ -235,52 +247,129 @@ async function runBatchPipeline(
 ): Promise<MatchResult[]> {
   const allMatches: MatchResult[] = [];
 
-  // Group files by season using directory structure
+  // ── Phase 1: Group files by season using directory structure ──
   const seasonGroups = groupFilesBySeason(mediaFiles, config.directory);
 
-  // Cache identified shows to avoid re-confirming for each season
   const showCache = new Map<string, IdentifiedShow | null>();
-  // Cache Season 0 fetches to avoid redundant requests per show
   const season0Cache = new Map<number, TmdbSeasonDetails | null>();
-  // Cache DVDCompare disc data per show name (searched once per show)
   const dvdCompareCache = new Map<string, DvdCompareDisc[] | null>();
-  // Collect specials candidates per show for the second pass
   const specialsCandidates = new Map<string, { show: IdentifiedShow; candidates: ClassifiedFile[] }>();
-  // Track potential "Play All" files across all season groups
   const allPlayAllFiles = new Set<string>();
 
+  // Collect unique show names (with a representative DirectoryContext for each)
+  const showContexts = new Map<string, DirectoryContext>();
+  for (const [, group] of seasonGroups) {
+    const showName = group.directoryContext.showName;
+    if (!showContexts.has(showName)) {
+      showContexts.set(showName, group.directoryContext);
+    }
+  }
+
+  // ── Phase 2: Identify shows via TMDb (no probing needed) ──
+  for (const [showName, context] of showContexts) {
+    try {
+      const show = await identifyShow(client, context, ui.prompts);
+      showCache.set(showName, show);
+    } catch (err) {
+      if (err instanceof FatalError) {
+        ui.progress.stop();
+        throw err;
+      }
+      logger.error(`Error identifying show "${showName}": ${err}`);
+      showCache.set(showName, null);
+    }
+  }
+
+  // ── Phase 3: DVDCompare lookup for identified shows (no probing needed) ──
+  for (const [showName] of showContexts) {
+    const show = showCache.get(showName);
+    if (!show) continue; // Show wasn't identified — skip DVDCompare
+
+    try {
+      ui.progress.start(`Searching DVDCompare for "${showName}"...`);
+      const searchResults = await searchDvdCompare(showName);
+
+      if (searchResults.length > 0) {
+        ui.progress.succeed(
+          `DVDCompare: found ${searchResults.length} result(s) (${searchResults.filter((r) => r.isBluray).length} Blu-ray)`,
+        );
+
+        // Let the user select one or more DVDCompare results
+        const selectedResults = await ui.prompts.confirmDvdCompareSelection(showName, searchResults);
+
+        if (selectedResults.length > 0) {
+          // Fetch disc data from all selected results and merge
+          const allDiscs: DvdCompareDisc[] = [];
+
+          for (const selectedResult of selectedResults) {
+            logger.batch(
+              `DVDCompare: fetching "${selectedResult.title}" (fid=${selectedResult.fid}, ` +
+              `${selectedResult.isBluray ? 'Blu-ray' : 'DVD'})`,
+            );
+
+            ui.progress.start(`Fetching DVDCompare disc data for "${selectedResult.title}"...`);
+            const dvdData = await fetchDiscEpisodeData(selectedResult.fid);
+            if (dvdData?.discs) {
+              allDiscs.push(...dvdData.discs);
+            }
+          }
+
+          const dvdCompareDiscs = allDiscs.length > 0 ? allDiscs : null;
+
+          if (dvdCompareDiscs) {
+            const totalEps = dvdCompareDiscs.reduce((sum, d) => sum + d.episodes.length, 0);
+            ui.progress.succeed(
+              `DVDCompare: ${selectedResults.length} release(s), ${dvdCompareDiscs.length} disc(s), ${totalEps} episode(s)`,
+            );
+          } else {
+            ui.progress.succeed(`DVDCompare: no disc data found in selected results`);
+          }
+
+          dvdCompareCache.set(showName, dvdCompareDiscs);
+        } else {
+          dvdCompareCache.set(showName, null);
+          ui.progress.succeed(`DVDCompare: skipped by user`);
+        }
+      } else {
+        dvdCompareCache.set(showName, null);
+        ui.progress.succeed(`DVDCompare: no results found`);
+      }
+    } catch (err) {
+      logger.warn(`DVDCompare lookup failed for "${showName}": ${err}`);
+      dvdCompareCache.set(showName, null);
+      ui.progress.succeed(`DVDCompare: lookup failed (continuing without)`);
+    }
+  }
+
+  // ── Phase 4: Probe all files with ffprobe (unified progress) ──
+  const totalFiles = Array.from(seasonGroups.values()).reduce((sum, g) => sum + g.files.length, 0);
+  let probed = 0;
+  ui.progress.start(`[0/${totalFiles}] Probing files...`);
+
+  for (const [, group] of seasonGroups) {
+    for (const file of group.files) {
+      probed++;
+      ui.progress.update(`[${probed}/${totalFiles}] Probing: ${file.fileName}`);
+      try {
+        const probeData = await probeFile(file.filePath);
+        if (probeData) {
+          group.probeResults.set(file.filePath, probeData);
+        }
+      } catch (err) {
+        logger.warn(`Failed to probe ${file.fileName}: ${err}`);
+      }
+    }
+  }
+
+  ui.progress.succeed(`Probed ${totalFiles} files`);
+
+  // ── Phase 5: Classify + Match per season group ──
   for (const [groupKey, group] of seasonGroups) {
     const showName = group.directoryContext.showName;
     const season = group.directoryContext.season ?? 1;
 
     try {
-      // 1. Probe all files in this group for duration
-      const probeLabel = group.directoryContext.isExtras
-        ? `Probing ${group.files.length} extras files for ${showName}...`
-        : `Probing ${group.files.length} files for ${showName} Season ${season}...`;
-      ui.progress.start(probeLabel);
-      let probed = 0;
-      for (const file of group.files) {
-        probed++;
-        ui.progress.update(`[${probed}/${group.files.length}] Probing: ${file.fileName}`);
-        try {
-          const probeData = await probeFile(file.filePath);
-          if (probeData) {
-            group.probeResults.set(file.filePath, probeData);
-          }
-        } catch (err) {
-          logger.warn(`Failed to probe ${file.fileName}: ${err}`);
-        }
-      }
-      ui.progress.succeed(`Probed ${group.files.length} files`);
-
-      // 2. Identify the show (once per show name, cached)
-      let show = showCache.get(showName);
-      if (show === undefined) {
-        // Not yet cached — identify
-        show = await identifyShow(client, group.directoryContext, ui.prompts);
-        showCache.set(showName, show);
-      }
+      const show = showCache.get(showName);
 
       if (!show) {
         // User skipped or show not found — mark all as unmatched
@@ -297,7 +386,7 @@ async function runBatchPipeline(
         continue;
       }
 
-      // 2b. Extras groups skip season matching entirely — send straight to specials candidates
+      // Extras groups skip season matching — send straight to specials candidates
       if (group.directoryContext.isExtras) {
         logger.info(`${showName}: extras directory — ${group.files.length} file(s) → specials candidates`);
 
@@ -318,70 +407,7 @@ async function runBatchPipeline(
         continue;
       }
 
-      // 2c. Look up DVDCompare disc data for definitive episode identification
-      // (searched once per show name, cached; gracefully degrades if unavailable)
-      // DVDCompare often has separate entries per season (e.g., "S1 DVD", "S3 Blu-ray"),
-      // so we support multi-selection and merge disc data from all selected results.
-      let dvdCompareDiscs: DvdCompareDisc[] | null | undefined = dvdCompareCache.get(showName);
-      if (dvdCompareDiscs === undefined) {
-        // Not yet cached — search DVDCompare
-        try {
-          ui.progress.start(`Searching DVDCompare for "${showName}"...`);
-          const searchResults = await searchDvdCompare(showName);
-
-          if (searchResults.length > 0) {
-            ui.progress.succeed(
-              `DVDCompare: found ${searchResults.length} result(s) (${searchResults.filter((r) => r.isBluray).length} Blu-ray)`,
-            );
-
-            // Let the user select one or more DVDCompare results
-            const selectedResults = await ui.prompts.confirmDvdCompareSelection(showName, searchResults);
-
-            if (selectedResults.length > 0) {
-              // Fetch disc data from all selected results and merge
-              const allDiscs: DvdCompareDisc[] = [];
-
-              for (const selectedResult of selectedResults) {
-                logger.batch(
-                  `DVDCompare: fetching "${selectedResult.title}" (fid=${selectedResult.fid}, ` +
-                  `${selectedResult.isBluray ? 'Blu-ray' : 'DVD'})`,
-                );
-
-                ui.progress.start(`Fetching DVDCompare disc data for "${selectedResult.title}"...`);
-                const dvdData = await fetchDiscEpisodeData(selectedResult.fid);
-                if (dvdData?.discs) {
-                  allDiscs.push(...dvdData.discs);
-                }
-              }
-
-              dvdCompareDiscs = allDiscs.length > 0 ? allDiscs : null;
-
-              if (dvdCompareDiscs) {
-                const totalEps = dvdCompareDiscs.reduce((sum, d) => sum + d.episodes.length, 0);
-                ui.progress.succeed(
-                  `DVDCompare: ${selectedResults.length} release(s), ${dvdCompareDiscs.length} disc(s), ${totalEps} episode(s)`,
-                );
-              } else {
-                ui.progress.succeed(`DVDCompare: no disc data found in selected results`);
-              }
-            } else {
-              dvdCompareDiscs = null;
-              ui.progress.succeed(`DVDCompare: skipped by user`);
-            }
-          } else {
-            dvdCompareDiscs = null;
-            ui.progress.succeed(`DVDCompare: no results found`);
-          }
-        } catch (err) {
-          logger.warn(`DVDCompare lookup failed for "${showName}": ${err}`);
-          dvdCompareDiscs = null;
-          ui.progress.succeed(`DVDCompare: lookup failed (continuing without)`);
-        }
-
-        dvdCompareCache.set(showName, dvdCompareDiscs);
-      }
-
-      // 3. Classify files as episodes vs extras
+      // Classify files as episodes vs extras
       const expectedRuntime = show.episodeRunTime.length > 0
         ? show.episodeRunTime[0]
         : undefined;
@@ -396,13 +422,14 @@ async function runBatchPipeline(
         `${episodeFiles.length} episode(s), ${extraFiles.length} extra(s)`
       );
 
-      // 3b. Detect potential "Play All" multi-episode concatenation files
+      // Detect potential "Play All" multi-episode concatenation files
       const playAllFiles = detectPlayAllFiles(classified);
       for (const fp of playAllFiles) {
         allPlayAllFiles.add(fp);
       }
 
-      // 4. Match episodes to TMDb season (pass DVDCompare data when available)
+      // Match episodes to TMDb season (pass DVDCompare data when available)
+      const dvdCompareDiscs = dvdCompareCache.get(showName) ?? null;
       ui.progress.start(`Matching ${episodeFiles.length} episodes for ${showName} Season ${season}...`);
       const seasonResult = await matchSeasonBatch(
         client,
@@ -417,16 +444,14 @@ async function runBatchPipeline(
       ui.progress.succeed(`Matched ${seasonResult.matched.filter(m => m.status === 'matched').length} episode(s)`);
 
       // Mark all batch results with dvdCompareUsed so the UI always shows the
-      // DVDCompare column in batch mode. When DVDCompare data is available the
-      // individual matches will have dvdCompareRuntimeSeconds populated; when
-      // it's not available each row will show a "missing" chip instead.
+      // DVDCompare column in batch mode.
       for (const match of seasonResult.matched) {
         match.dvdCompareUsed = true;
       }
 
       allMatches.push(...seasonResult.matched);
 
-      // 5. Collect all unmatched files as specials candidates:
+      // Collect all unmatched files as specials candidates:
       //    reclassifiedExtras (from season matching) + initial extraFiles
       const showSpecials = specialsCandidates.get(showName) ?? { show, candidates: [] };
       showSpecials.candidates.push(...seasonResult.reclassifiedExtras);
@@ -455,7 +480,7 @@ async function runBatchPipeline(
     }
   }
 
-  // 6. Second pass: try all unmatched files against TMDb Season 0 (Specials)
+  // ── Phase 6: Match specials (Season 0) ──
   for (const [showName, { show, candidates }] of specialsCandidates) {
     if (candidates.length === 0) continue;
 
@@ -511,7 +536,7 @@ async function runBatchPipeline(
     }
   }
 
-  // Apply "Play All" warnings to final match results
+  // ── Phase 7: Apply "Play All" warnings ──
   if (allPlayAllFiles.size > 0) {
     for (const match of allMatches) {
       if (allPlayAllFiles.has(match.mediaFile.filePath)) {

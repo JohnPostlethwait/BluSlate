@@ -30,6 +30,8 @@
   "packageManager": "pnpm@10.28.2",
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@ffprobe-installer/darwin-arm64",
+      "@ffprobe-installer/ffprobe",
       "electron",
       "esbuild",
       "sharp"

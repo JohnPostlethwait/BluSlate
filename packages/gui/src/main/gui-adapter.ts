@@ -2,17 +2,45 @@ import { BrowserWindow, ipcMain } from 'electron';
 import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult } from '@mediafetch/core';
 
 /**
+ * Error thrown when the user cancels the pipeline mid-execution.
+ * Caught by the main process pipeline runner to distinguish from real errors.
+ */
+export class PipelineCancelledError extends Error {
+  constructor() {
+    super('Pipeline cancelled by user');
+    this.name = 'PipelineCancelledError';
+  }
+}
+
+export interface CancellableGuiAdapter extends UIAdapter {
+  /** Signal that the pipeline should stop at the next progress checkpoint. */
+  cancel(): void;
+}
+
+/**
  * Create a UIAdapter that bridges core pipeline events to the Electron renderer
  * via IPC channels. Prompts use request/response patterns where the main process
  * sends a request and awaits a response from the renderer.
+ *
+ * The adapter supports cancellation: calling `cancel()` sets a flag that is
+ * checked on every `progress.update()` call, throwing a PipelineCancelledError
+ * to unwind the pipeline.
  */
-export function createGuiAdapter(mainWindow: BrowserWindow): UIAdapter {
+export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapter {
+  let cancelled = false;
+
   return {
+    cancel(): void {
+      cancelled = true;
+    },
+
     progress: {
       start(message: string): void {
+        if (cancelled) throw new PipelineCancelledError();
         mainWindow.webContents.send('progress:start', { message });
       },
       update(message: string): void {
+        if (cancelled) throw new PipelineCancelledError();
         mainWindow.webContents.send('progress:update', { message });
       },
       succeed(message?: string): void {

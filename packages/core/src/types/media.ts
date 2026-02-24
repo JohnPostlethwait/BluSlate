@@ -27,6 +27,7 @@ export interface ParsedFilename {
 export interface ConfidenceBreakdownItem {
   label: string;
   points: number;
+  maxPoints?: number;
 }
 
 export interface MatchResult {

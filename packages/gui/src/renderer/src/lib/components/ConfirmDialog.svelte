@@ -38,6 +38,14 @@
     openTooltipKey = openTooltipKey === key ? null : key;
   }
 
+  function handleWindowClick(e: MouseEvent) {
+    if (openTooltipKey === null) return;
+    const target = e.target as HTMLElement;
+    // Ignore clicks on badge buttons and tooltip popovers themselves
+    if (target.closest('.badge-wrap')) return;
+    openTooltipKey = null;
+  }
+
   // Reset selections when renameable list changes
   $effect(() => {
     selected = Array.from({ length: renameable.length }, () => true);
@@ -109,9 +117,13 @@
 
   function confidenceTooltip(match: MatchResultData): string {
     if (match.confidenceBreakdown && match.confidenceBreakdown.length > 0) {
-      const lines = match.confidenceBreakdown.map(
-        (item) => `${item.label} (${item.points >= 0 ? '+' : ''}${item.points})`,
-      );
+      const lines = match.confidenceBreakdown.map((item) => {
+        const sign = item.points >= 0 ? '+' : '';
+        if (item.maxPoints !== undefined) {
+          return `${item.label} (${sign}${item.points}/${item.maxPoints})`;
+        }
+        return `${item.label} (${sign}${item.points})`;
+      });
       lines.push('\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500');
       lines.push(`Total: ${match.confidence}%`);
       return lines.join('\n');
@@ -198,6 +210,8 @@
     return groups;
   });
 </script>
+
+<svelte:window onclick={handleWindowClick} />
 
 <div class="confirm-dialog">
   <h2>Review Rename Plan</h2>

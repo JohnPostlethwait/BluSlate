@@ -5,6 +5,7 @@ interface Window {
   electron: import('@electron-toolkit/preload').ElectronAPI;
   api: {
     selectDirectory: () => Promise<string | null>;
+    cancelPipeline: () => void;
     startPipeline: (options: {
       directory: string;
       apiKey: string;
@@ -28,6 +29,7 @@ interface Window {
     onPipelineComplete: (callback: (data: { success: boolean }) => void) => () => void;
     onPipelineError: (callback: (data: { message: string }) => void) => () => void;
     onMenuOpenDirectory: (callback: (directory: string) => void) => () => void;
+    checkFfprobe: () => Promise<boolean>;
     loadSettings: () => Promise<{ apiKey?: string; recentDirectories: string[] }>;
     saveApiKey: (apiKey: string) => Promise<void>;
     getRecentDirectories: () => Promise<string[]>;
@@ -37,6 +39,7 @@ interface Window {
 interface ConfidenceBreakdownItem {
   label: string;
   points: number;
+  maxPoints?: number;
 }
 
 interface MatchResultData {

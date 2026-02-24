@@ -4,12 +4,30 @@ import type { ProbeResult } from '../types/media.js';
 import type { FfprobeOutput } from '../types/probe.js';
 
 let ffprobeAvailable: boolean | null = null;
+let ffprobePath = 'ffprobe';
+
+/**
+ * Set a custom path to the ffprobe binary. Resets the availability cache
+ * so the next check uses the new path.
+ */
+export function setFfprobePath(customPath: string): void {
+  ffprobePath = customPath;
+  ffprobeAvailable = null; // invalidate cache
+}
+
+/**
+ * Check whether ffprobe is available. Caches the result until
+ * `setFfprobePath()` is called.
+ */
+export async function isFfprobeAvailable(): Promise<boolean> {
+  return checkFfprobe();
+}
 
 async function checkFfprobe(): Promise<boolean> {
   if (ffprobeAvailable !== null) return ffprobeAvailable;
 
   return new Promise((resolve) => {
-    execFile('ffprobe', ['-version'], (error) => {
+    execFile(ffprobePath, ['-version'], (error) => {
       ffprobeAvailable = !error;
       if (!ffprobeAvailable) {
         logger.warn('ffprobe not found. Install ffmpeg for better matching accuracy.');
@@ -22,12 +40,11 @@ async function checkFfprobe(): Promise<boolean> {
 function runFfprobe(filePath: string): Promise<FfprobeOutput> {
   return new Promise((resolve, reject) => {
     execFile(
-      'ffprobe',
+      ffprobePath,
       [
         '-v', 'quiet',
         '-print_format', 'json',
         '-show_format',
-        '-show_streams',
         filePath,
       ],
       { maxBuffer: 1024 * 1024, timeout: 30_000 },

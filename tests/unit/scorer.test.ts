@@ -125,8 +125,8 @@ describe('computeConfidence', () => {
   });
 });
 
-describe('computeBatchConfidenceBreakdown — DVDCompare', () => {
-  it('should give 95 points for sub-second DVDCompare match', () => {
+describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
+  it('should give 100 points for perfect DVDCompare match (40+60)', () => {
     const result = computeBatchConfidenceBreakdown({
       sequentialPositionMatch: true,
       runtimeDiffMinutes: 0,
@@ -134,13 +134,13 @@ describe('computeBatchConfidenceBreakdown — DVDCompare', () => {
       dvdCompareRuntimeDiffSeconds: 0.2,
     });
 
-    expect(result.total).toBe(95);
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].label).toContain('DVDCompare');
-    expect(result.items[0].points).toBe(95);
+    // 40 (position) + round(60 - 0.2) = 60 (runtime) = 100
+    expect(result.total).toBe(100);
+    // Should have 2 breakdown items: position + DVDCompare runtime
+    expect(result.items).toHaveLength(2);
   });
 
-  it('should give 90 points for DVDCompare match with 1-3 second diff', () => {
+  it('should deduct 1 point per second of DVDCompare drift (40+58=98)', () => {
     const result = computeBatchConfidenceBreakdown({
       sequentialPositionMatch: true,
       runtimeDiffMinutes: 0,
@@ -148,11 +148,11 @@ describe('computeBatchConfidenceBreakdown — DVDCompare', () => {
       dvdCompareRuntimeDiffSeconds: 2.5,
     });
 
-    expect(result.total).toBe(90);
-    expect(result.items[0].points).toBe(90);
+    // 40 (position) + round(60 - 2.5) = 58 (runtime) = 98
+    expect(result.total).toBe(98);
   });
 
-  it('should apply small penalty for multi-episode DVDCompare match', () => {
+  it('should apply -15 penalty for multi-episode DVDCompare match (40+60-15=85)', () => {
     const result = computeBatchConfidenceBreakdown({
       sequentialPositionMatch: true,
       runtimeDiffMinutes: 0,
@@ -161,19 +161,103 @@ describe('computeBatchConfidenceBreakdown — DVDCompare', () => {
       isMultiEpisodeMatch: true,
     });
 
-    expect(result.total).toBe(90); // 95 - 5
-    expect(result.items).toHaveLength(2);
+    expect(result.total).toBe(85);
+    // position + DVDCompare runtime + multi-ep penalty
+    expect(result.items).toHaveLength(3);
   });
 
-  it('should bypass normal scoring when DVDCompare match is set', () => {
-    // Even with no sequential position match or bad runtime, DVDCompare takes priority
+  it('should score 45 with no position match and 15s DVDCompare drift', () => {
     const result = computeBatchConfidenceBreakdown({
       sequentialPositionMatch: false,
       runtimeDiffMinutes: 15,
       isDvdCompareMatch: true,
-      dvdCompareRuntimeDiffSeconds: 0.5,
+      dvdCompareRuntimeDiffSeconds: 15,
     });
 
-    expect(result.total).toBe(95);
+    // 0 (position) + round(60 - 15) = 45 (DVDCompare runtime) = 45
+    expect(result.total).toBe(45);
+    expect(result.items).toHaveLength(2);
+    expect(result.items.find(i => i.label.includes('No sequential'))).toBeDefined();
+    expect(result.items.find(i => i.label.includes('DVDCompare'))).toBeDefined();
+  });
+
+  it('should label runtime as DVDCompare when DVDCompare data is present', () => {
+    const result = computeBatchConfidenceBreakdown({
+      sequentialPositionMatch: true,
+      runtimeDiffMinutes: 2,
+      isDvdCompareMatch: true,
+      dvdCompareRuntimeDiffSeconds: 5,
+    });
+
+    const dvdItem = result.items.find(i => i.label.includes('DVDCompare runtime'));
+    expect(dvdItem).toBeDefined();
+    expect(dvdItem!.maxPoints).toBe(60);
+  });
+
+  it('should not apply relative runtime penalty when DVDCompare is present', () => {
+    const result = computeBatchConfidenceBreakdown({
+      sequentialPositionMatch: true,
+      runtimeDiffMinutes: 20,
+      isDvdCompareMatch: true,
+      dvdCompareRuntimeDiffSeconds: 1,
+      singleEpisodeRuntimeMinutes: 30,
+    });
+
+    const penaltyItem = result.items.find(i => i.label.includes('% of episode'));
+    expect(penaltyItem).toBeUndefined();
+  });
+
+  it('should give 0 runtime points for DVDCompare drift >= 60s', () => {
+    const result = computeBatchConfidenceBreakdown({
+      sequentialPositionMatch: true,
+      runtimeDiffMinutes: 0,
+      isDvdCompareMatch: true,
+      dvdCompareRuntimeDiffSeconds: 75,
+    });
+
+    const dvdItem = result.items.find(i => i.label.includes('DVDCompare'));
+    expect(dvdItem).toBeDefined();
+    expect(dvdItem!.points).toBe(0);
+    // 40 (position) + 0 (runtime) = 40
+    expect(result.total).toBe(40);
+  });
+
+  it('should give 53 runtime points for 7s DVDCompare drift (40+53=93)', () => {
+    const result = computeBatchConfidenceBreakdown({
+      sequentialPositionMatch: true,
+      runtimeDiffMinutes: 0,
+      isDvdCompareMatch: true,
+      dvdCompareRuntimeDiffSeconds: 7,
+    });
+
+    const dvdItem = result.items.find(i => i.label.includes('DVDCompare'));
+    expect(dvdItem!.points).toBe(53);
+    expect(result.total).toBe(93);
+  });
+
+  it('should give 30 runtime points for 30s DVDCompare drift (40+30=70)', () => {
+    const result = computeBatchConfidenceBreakdown({
+      sequentialPositionMatch: true,
+      runtimeDiffMinutes: 0,
+      isDvdCompareMatch: true,
+      dvdCompareRuntimeDiffSeconds: 30,
+    });
+
+    const dvdItem = result.items.find(i => i.label.includes('DVDCompare'));
+    expect(dvdItem!.points).toBe(30);
+    expect(result.total).toBe(70);
+  });
+
+  it('should give 0 runtime points at exactly 60s DVDCompare drift (40+0=40)', () => {
+    const result = computeBatchConfidenceBreakdown({
+      sequentialPositionMatch: true,
+      runtimeDiffMinutes: 0,
+      isDvdCompareMatch: true,
+      dvdCompareRuntimeDiffSeconds: 60,
+    });
+
+    const dvdItem = result.items.find(i => i.label.includes('DVDCompare'));
+    expect(dvdItem!.points).toBe(0);
+    expect(result.total).toBe(40);
   });
 });

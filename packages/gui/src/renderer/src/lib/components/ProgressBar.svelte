@@ -2,9 +2,10 @@
   interface Props {
     event: string;
     message: string;
+    oncancel?: () => void;
   }
 
-  let { event, message }: Props = $props();
+  let { event, message, oncancel }: Props = $props();
 
   let isActive = $derived(event === 'start' || event === 'update');
 
@@ -75,6 +76,10 @@
           </div>
         {/each}
       </div>
+    {/if}
+
+    {#if oncancel && isActive}
+      <button class="cancel-btn" onclick={oncancel}>Cancel</button>
     {/if}
   </div>
 </div>
@@ -198,5 +203,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cancel-btn {
+    margin-top: 20px;
+    background: transparent;
+    border: 1px solid #ff4444;
+    color: #ff4444;
+    padding: 8px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+  }
+
+  .cancel-btn:hover {
+    background: #ff444422;
   }
 </style>

@@ -26,7 +26,7 @@ export type { BatchConfidenceBreakdown, BatchConfidenceParams } from './core/sco
 
 // Scanner & Prober
 export { scanDirectory } from './core/scanner.js';
-export { probeFile } from './core/prober.js';
+export { probeFile, setFfprobePath, isFfprobeAvailable } from './core/prober.js';
 
 // Renamer
 export { executeRenames, writeRenameLog } from './core/renamer.js';

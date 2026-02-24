@@ -1,6 +1,6 @@
 export interface FfprobeOutput {
   format: FfprobeFormat;
-  streams: FfprobeStream[];
+  streams?: FfprobeStream[];
 }
 
 export interface FfprobeFormat {

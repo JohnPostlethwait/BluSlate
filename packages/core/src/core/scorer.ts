@@ -127,85 +127,90 @@ export type BatchConfidenceParams = {
  * by sequential position + runtime comparison. Returns both the total
  * score and a line-item breakdown of each scoring factor.
  *
- * Scoring (max 100):
+ * Scoring components (max 100, always):
  *   - Sequential position match: +40
- *   - Runtime match: 0–60 (continuous per-minute deduction for regular, percentage for specials)
+ *   - Runtime match: 0–60
+ *       When DVDCompare data available: -1 point per second of drift
+ *       When no DVDCompare: continuous per-minute deduction (regular) or
+ *       percentage-based thresholds (specials)
  *   - Multi-episode penalty: -15
- *   - Relative runtime penalty: -5 or -10
+ *   - Relative runtime penalty: -5 or -10 (only without DVDCompare, non-specials)
  */
 export function computeBatchConfidenceBreakdown(params: BatchConfidenceParams): BatchConfidenceBreakdown {
   let score = 0;
   const items: ConfidenceBreakdownItem[] = [];
 
-  // DVDCompare definitive match — bypass normal scoring
-  // Sub-second runtime matching against DVDCompare's to-the-second data
-  // provides near-certain episode identification
-  if (params.isDvdCompareMatch) {
-    const diffSeconds = params.dvdCompareRuntimeDiffSeconds ?? 0;
-    const dvdPoints = diffSeconds <= 1 ? 95 : 90;
-    items.push({
-      label: `DVDCompare match (±${diffSeconds.toFixed(1)}s)`,
-      points: dvdPoints,
-    });
-    if (params.isMultiEpisodeMatch) {
-      items.push({ label: 'Multi-episode match', points: -5 });
-      return { total: Math.max(0, dvdPoints - 5), items };
-    }
-    return { total: dvdPoints, items };
-  }
+  const hasDvdCompare = params.isDvdCompareMatch === true;
+  const positionPoints = 40;
+  const runtimeMaxPoints = 60;
 
-  // Sequential position match (0 or 40 points)
+  // Sequential position match (+40)
   if (params.sequentialPositionMatch) {
-    score += 40;
-    items.push({ label: 'Sequential position match', points: 40 });
+    score += positionPoints;
+    items.push({ label: 'Sequential position match', points: positionPoints, maxPoints: positionPoints });
   } else {
-    items.push({ label: 'No sequential position match', points: 0 });
+    items.push({ label: 'No sequential position match', points: 0, maxPoints: positionPoints });
   }
 
-  // Runtime match (0-60 points)
-  if (params.runtimeDiffMinutes !== undefined) {
+  // Runtime match (0–60)
+  // When DVDCompare data is available, it replaces TMDb as the runtime source
+  // with seconds-level precision (-1 point per second of drift).
+  if (hasDvdCompare && params.dvdCompareRuntimeDiffSeconds !== undefined) {
+    const diffSeconds = params.dvdCompareRuntimeDiffSeconds;
+    const runtimePoints = Math.round(Math.max(0, runtimeMaxPoints - diffSeconds));
+    const diffLabel = `±${diffSeconds < 10 ? diffSeconds.toFixed(1) : Math.round(diffSeconds)}s`;
+    if (runtimePoints > 0) {
+      score += runtimePoints;
+      items.push({ label: `DVDCompare runtime match ${diffLabel}`, points: runtimePoints, maxPoints: runtimeMaxPoints });
+    } else {
+      items.push({ label: `DVDCompare runtime diff ${diffLabel}`, points: 0, maxPoints: runtimeMaxPoints });
+    }
+  } else if (params.runtimeDiffMinutes !== undefined) {
     if (params.isSpecialsMatch && params.tmdbRuntimeMinutes) {
       // Specials: use percentage-based thresholds (more forgiving for variable runtimes)
       const pctDiff = (params.runtimeDiffMinutes / params.tmdbRuntimeMinutes) * 100;
       const diffLabel = `±${Math.round(params.runtimeDiffMinutes)}min (${Math.round(pctDiff)}%)`;
       if (pctDiff <= 5) {
-        score += 60;
-        items.push({ label: `Runtime match ${diffLabel}`, points: 60 });
+        score += runtimeMaxPoints;
+        items.push({ label: `Runtime match ${diffLabel}`, points: runtimeMaxPoints, maxPoints: runtimeMaxPoints });
       } else if (pctDiff <= 10) {
-        score += 45;
-        items.push({ label: `Runtime close ${diffLabel}`, points: 45 });
+        const pts = Math.round(runtimeMaxPoints * 0.75);
+        score += pts;
+        items.push({ label: `Runtime close ${diffLabel}`, points: pts, maxPoints: runtimeMaxPoints });
       } else if (pctDiff <= 15) {
-        score += 25;
-        items.push({ label: `Runtime diff ${diffLabel}`, points: 25 });
+        const pts = Math.round(runtimeMaxPoints * 0.42);
+        score += pts;
+        items.push({ label: `Runtime diff ${diffLabel}`, points: pts, maxPoints: runtimeMaxPoints });
       } else {
-        items.push({ label: `Runtime diff ${diffLabel}`, points: 0 });
+        items.push({ label: `Runtime diff ${diffLabel}`, points: 0, maxPoints: runtimeMaxPoints });
       }
     } else {
-      // Regular episodes: continuous per-minute deduction from 60-point max.
-      // Each minute of runtime difference costs 1 point (e.g., 3min diff → 57pts → 97% total).
+      // Regular episodes: continuous per-minute deduction.
       const diffLabel = `±${Math.round(params.runtimeDiffMinutes)}min`;
-      const runtimePoints = Math.round(Math.max(0, 60 - params.runtimeDiffMinutes));
+      const costPerMinute = runtimeMaxPoints / 60;
+      const runtimePoints = Math.round(Math.max(0, runtimeMaxPoints - params.runtimeDiffMinutes * costPerMinute));
       if (runtimePoints > 0) {
         score += runtimePoints;
-        items.push({ label: `Runtime match ${diffLabel}`, points: runtimePoints });
+        items.push({ label: `Runtime match ${diffLabel}`, points: runtimePoints, maxPoints: runtimeMaxPoints });
       } else {
-        items.push({ label: `Runtime diff ${diffLabel}`, points: 0 });
+        items.push({ label: `Runtime diff ${diffLabel}`, points: 0, maxPoints: runtimeMaxPoints });
       }
     }
   } else {
-    items.push({ label: 'Runtime: no data', points: 0 });
+    items.push({ label: 'Runtime: no data', points: 0, maxPoints: runtimeMaxPoints });
   }
 
-  // Multi-episode penalty: combining episodes is a heuristic guess
+  // Multi-episode penalty (-15)
   if (params.isMultiEpisodeMatch) {
     score -= 15;
     items.push({ label: 'Multi-episode match', points: -15 });
   }
 
   // Relative runtime penalty: penalize when runtime diff is large relative to episode length
-  // Skip for specials — they already use percentage-based scoring above
+  // Skip for specials (already percentage-based) and DVDCompare matches (seconds-level precision)
   if (
     !params.isSpecialsMatch &&
+    !hasDvdCompare &&
     params.singleEpisodeRuntimeMinutes !== undefined &&
     params.singleEpisodeRuntimeMinutes > 0 &&
     params.runtimeDiffMinutes !== undefined

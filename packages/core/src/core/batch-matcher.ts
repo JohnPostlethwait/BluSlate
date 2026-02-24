@@ -639,10 +639,43 @@ export async function matchSeasonBatch(
       if (bestDvdEp && bestSimilarity >= 0.6) {
         match.dvdCompareRuntimeSeconds = bestDvdEp.runtimeSeconds;
         match.dvdCompareTitle = bestDvdEp.title;
+        match.matchSource = 'dvdcompare';
+
+        // Recompute confidence with combined TMDb + DVDCompare scoring
+        const fileDurationSeconds = match.probeData?.durationSeconds;
+        const dvdCompareRuntimeDiffSeconds = fileDurationSeconds !== undefined
+          ? Math.abs(fileDurationSeconds - bestDvdEp.runtimeSeconds)
+          : undefined;
+
+        const hasSeqMatch = match.confidenceBreakdown?.some(
+          (item) => item.label.includes('Sequential position match') && item.points > 0,
+        ) ?? false;
+
+        const runtimeDiffMinutes =
+          match.probeData?.durationSeconds !== undefined && match.tmdbMatch?.runtime !== undefined
+            ? Math.abs(match.probeData.durationSeconds / 60 - match.tmdbMatch.runtime)
+            : undefined;
+
+        const isMultiEp = match.tmdbMatch?.episodeNumberEnd !== undefined;
+
+        const breakdown = computeBatchConfidenceBreakdown({
+          sequentialPositionMatch: hasSeqMatch,
+          runtimeDiffMinutes,
+          isMultiEpisodeMatch: isMultiEp,
+          singleEpisodeRuntimeMinutes: match.tmdbMatch?.runtime ?? undefined,
+          isDvdCompareMatch: true,
+          dvdCompareRuntimeDiffSeconds,
+        });
+
+        match.confidence = breakdown.total;
+        match.confidenceBreakdown = breakdown.items;
+        match.status = breakdown.total >= 60 ? 'matched' : 'ambiguous';
+
         logger.batch(
           `DVDCompare enrichment: ${match.mediaFile.fileName} → ` +
           `"${bestDvdEp.title}" (${bestDvdEp.runtimeSeconds}s, ` +
-          `similarity: ${(bestSimilarity * 100).toFixed(0)}%)`,
+          `similarity: ${(bestSimilarity * 100).toFixed(0)}%, ` +
+          `confidence: ${breakdown.total}%)`,
         );
       }
     }
