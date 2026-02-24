@@ -9,20 +9,6 @@ export function isVideoFile(filePath: string): boolean {
   return VIDEO_EXTENSIONS.has(ext);
 }
 
-export async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function getFileSize(filePath: string): Promise<number> {
-  const stat = await fs.stat(filePath);
-  return stat.size;
-}
-
 /**
  * Atomically rename a file, avoiding overwrites via race-safe collision handling.
  *

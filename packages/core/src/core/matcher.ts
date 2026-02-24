@@ -1,5 +1,6 @@
 import { TmdbClient } from '../api/tmdb-client.js';
 import { computeConfidence, normalizedSimilarity } from './scorer.js';
+import { CONFIDENCE_MATCHED_THRESHOLD } from '../config/thresholds.js';
 import { MediaType } from '../types/media.js';
 import type { ParsedFilename, TmdbMatchedItem, ProbeResult, MatchResult, MediaFile } from '../types/media.js';
 import type { TmdbTvResult, TmdbMovieResult } from '../types/tmdb.js';
@@ -213,6 +214,6 @@ export async function findMatch(
     tmdbMatch: result.match,
     confidence: result.confidence,
     newFilename,
-    status: result.confidence >= 60 ? 'matched' : 'ambiguous',
+    status: result.confidence >= CONFIDENCE_MATCHED_THRESHOLD ? 'matched' : 'ambiguous',
   };
 }

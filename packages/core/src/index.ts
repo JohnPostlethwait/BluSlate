@@ -96,4 +96,6 @@ export type {
   UserPrompter,
   DisplayAdapter,
   UIAdapter,
+  ShowRetrySignal,
+  ShowIdentificationResult,
 } from './types/ui-adapter.js';

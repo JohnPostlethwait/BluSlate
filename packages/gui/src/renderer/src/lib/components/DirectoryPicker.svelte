@@ -11,7 +11,7 @@
 
   let directory = $state('');
   let apiKey = $state('');
-  let recursive = $state(false);
+  let recursive = $state(true);
   let dryRun = $state(false);
   let isDragOver = $state(false);
   let ffprobeAvailable = $state<boolean | null>(null);

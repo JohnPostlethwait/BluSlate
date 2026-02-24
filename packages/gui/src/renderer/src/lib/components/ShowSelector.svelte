@@ -4,11 +4,19 @@
     candidates: ShowCandidate[];
     onselect: (selected: ShowCandidate | null) => void;
     oncancel: () => void;
+    onretry: (query: string) => void;
   }
 
-  let { showName, candidates, onselect, oncancel }: Props = $props();
+  let { showName, candidates, onselect, oncancel, onretry }: Props = $props();
 
   let selected = $state<ShowCandidate | null>(null);
+  let searchQuery = $state('');
+
+  // Sync search query and selection when showName changes (new prompt from core)
+  $effect(() => {
+    searchQuery = showName;
+    selected = null;
+  });
 
   function posterUrl(path: string | null): string | null {
     if (!path) return null;
@@ -20,49 +28,81 @@
     return date.substring(0, 4);
   }
 
+  function handleRetry() {
+    const trimmed = searchQuery.trim();
+    if (trimmed) {
+      onretry(trimmed);
+    }
+  }
 </script>
 
 <div class="show-selector">
-  <h2>Identify Show</h2>
+  <h2>Select TMDb Match</h2>
   <p class="subtitle">
     Select the correct show for: <strong>{showName}</strong>
   </p>
+  <p class="description">
+    TMDb (The Movie Database) is a community-built database of TV and movie metadata.
+    Select the correct match below to identify your files for renaming.
+  </p>
 
-  <div class="candidates">
-    {#each candidates as candidate}
-      <button
-        class="candidate-card"
-        class:selected={selected?.id === candidate.id}
-        onclick={() => (selected = candidate)}
-      >
-        <div class="poster">
-          {#if posterUrl(candidate.poster_path)}
-            <img src={posterUrl(candidate.poster_path)} alt={candidate.name} />
-          {:else}
-            <div class="no-poster">No Image</div>
-          {/if}
-        </div>
-        <div class="info">
-          <h3>{candidate.name}</h3>
-          {#if candidate.original_name && candidate.original_name !== candidate.name}
-            <p class="original-name">{candidate.original_name}</p>
-          {/if}
-          <p class="meta">
-            {formatYear(candidate.first_air_date)}
-            {#if candidate.origin_country?.length > 0}
-              &middot; {candidate.origin_country.join(', ')}
-            {/if}
-            {#if candidate.vote_average > 0}
-              &middot; ★ {candidate.vote_average.toFixed(1)}
-            {/if}
-          </p>
-          {#if candidate.overview}
-            <p class="overview">{candidate.overview}</p>
-          {/if}
-        </div>
-      </button>
-    {/each}
+  <div class="search-row">
+    <input
+      type="text"
+      class="search-input"
+      bind:value={searchQuery}
+      placeholder="Search query..."
+      onkeydown={(e) => e.key === 'Enter' && handleRetry()}
+    />
+    <button
+      class="btn-search"
+      onclick={handleRetry}
+      disabled={!searchQuery.trim() || searchQuery.trim() === showName}
+    >Search Again</button>
   </div>
+
+  {#if candidates.length === 0}
+    <div class="no-results">
+      <p>No results found for "<strong>{showName}</strong>".</p>
+      <p class="hint">Try editing the search query above and clicking "Search Again".</p>
+    </div>
+  {:else}
+    <div class="candidates">
+      {#each candidates as candidate}
+        <button
+          class="candidate-card"
+          class:selected={selected?.id === candidate.id}
+          onclick={() => (selected = candidate)}
+        >
+          <div class="poster">
+            {#if posterUrl(candidate.poster_path)}
+              <img src={posterUrl(candidate.poster_path)} alt={candidate.name} />
+            {:else}
+              <div class="no-poster">No Image</div>
+            {/if}
+          </div>
+          <div class="info">
+            <h3>{candidate.name}</h3>
+            {#if candidate.original_name && candidate.original_name !== candidate.name}
+              <p class="original-name">{candidate.original_name}</p>
+            {/if}
+            <p class="meta">
+              {formatYear(candidate.first_air_date)}
+              {#if candidate.origin_country?.length > 0}
+                &middot; {candidate.origin_country.join(', ')}
+              {/if}
+              {#if candidate.vote_average > 0}
+                &middot; ★ {candidate.vote_average.toFixed(1)}
+              {/if}
+            </p>
+            {#if candidate.overview}
+              <p class="overview">{candidate.overview}</p>
+            {/if}
+          </div>
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
     <button
@@ -94,11 +134,77 @@
   .subtitle {
     color: #888;
     font-size: 0.9rem;
-    margin: 0 0 20px;
+    margin: 0 0 8px;
   }
 
   .subtitle strong {
     color: #00d4ff;
+  }
+
+  .description {
+    color: #666;
+    font-size: 0.8rem;
+    margin: 0 0 16px;
+    line-height: 1.4;
+  }
+
+  .search-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .search-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #3a3a5a;
+    border-radius: 6px;
+    background: #0f0f23;
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-input:focus {
+    border-color: #00d4ff;
+  }
+
+  .btn-search {
+    padding: 8px 16px;
+    background: #2a2a4a;
+    color: #e0e0e0;
+    border: 1px solid #3a3a5a;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    transition: background 0.2s;
+  }
+
+  .btn-search:hover:not(:disabled) {
+    background: #3a3a5a;
+  }
+
+  .btn-search:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .no-results {
+    text-align: center;
+    padding: 32px 16px;
+    color: #888;
+  }
+
+  .no-results strong {
+    color: #00d4ff;
+  }
+
+  .no-results .hint {
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 8px;
   }
 
   .candidates {
@@ -192,5 +298,4 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-
 </style>

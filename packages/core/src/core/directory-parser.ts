@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { parseFilename } from './parser.js';
+import { BATCH_MODE_GENERIC_RATIO } from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
 import { MediaType } from '../types/media.js';
 import type { MediaFile, DirectoryContext, SeasonGroup } from '../types/media.js';
@@ -144,7 +145,7 @@ export function shouldUseBatchMode(files: MediaFile[]): boolean {
   const ratio = genericCount / files.length;
   logger.batch(`Generic filename ratio: ${genericCount}/${files.length} (${(ratio * 100).toFixed(0)}%)`);
 
-  return ratio > 0.7;
+  return ratio > BATCH_MODE_GENERIC_RATIO;
 }
 
 /**

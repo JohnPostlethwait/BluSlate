@@ -4,6 +4,20 @@ import { computeBatchConfidenceBreakdown } from './scorer.js';
 import { normalizedSimilarity } from './scorer.js';
 import { extractTrackNumber } from './directory-parser.js';
 import { renderTemplate, getTemplate } from '../config/templates.js';
+import {
+  EPISODE_MIN_RUNTIME_RATIO,
+  EPISODE_MAX_RUNTIME_RATIO,
+  EPISODE_MIN_DURATION_MINUTES,
+  MULTI_EPISODE_RUNTIME_MULTIPLIER,
+  MULTI_EPISODE_COMBINED_TOLERANCE_MIN,
+  DVDCOMPARE_RUNTIME_TOLERANCE_SEC,
+  DVDCOMPARE_TITLE_SIMILARITY_MIN,
+  SPECIALS_MAX_DIFF_MINUTES,
+  SPECIALS_MAX_DIFF_PERCENT,
+  CONFIDENCE_MATCHED_THRESHOLD,
+  TRACK_REVERSAL_THRESHOLD,
+  TRACK_REVERSAL_MIN_FORWARD_COST,
+} from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
 import { MediaType } from '../types/media.js';
 import type { DvdCompareDisc } from '../api/dvdcompare-client.js';
@@ -38,35 +52,47 @@ export async function identifyShow(
   directoryContext: DirectoryContext,
   prompts: UserPrompter,
 ): Promise<IdentifiedShow | null> {
-  const searchResponse = await client.searchTv(directoryContext.showName);
+  let searchQuery = directoryContext.showName;
 
-  if (searchResponse.results.length === 0) {
-    logger.warn(`No TMDb results for show: "${directoryContext.showName}"`);
-    return null;
+  while (true) {
+    const searchResponse = await client.searchTv(searchQuery);
+
+    if (searchResponse.results.length === 0) {
+      logger.warn(`No TMDb results for show: "${searchQuery}"`);
+      // Let user retry with a different query even when no results found
+      const result = await prompts.confirmShowIdentification(searchQuery, []);
+      if (result !== null && typeof result === 'object' && '__retry' in result) {
+        searchQuery = result.__retry;
+        continue;
+      }
+      return null;
+    }
+
+    // Present top results to user for confirmation
+    const topResults = searchResponse.results.slice(0, 5);
+    const result = await prompts.confirmShowIdentification(searchQuery, topResults);
+
+    if (result === null) return null; // User skipped
+
+    if (typeof result === 'object' && '__retry' in result) {
+      searchQuery = result.__retry;
+      continue; // Loop again with new query
+    }
+
+    // User confirmed a show — fetch full details for episode_run_time
+    const details = await client.getTvDetails(result.id);
+
+    const year = result.first_air_date
+      ? parseInt(result.first_air_date.substring(0, 4), 10)
+      : undefined;
+
+    return {
+      showId: result.id,
+      showName: result.name,
+      showYear: isNaN(year as number) ? undefined : year,
+      episodeRunTime: details.episode_run_time ?? [],
+    };
   }
-
-  // Present top results to user for confirmation
-  const topResults = searchResponse.results.slice(0, 5);
-  const confirmed = await prompts.confirmShowIdentification(
-    directoryContext.showName,
-    topResults,
-  );
-
-  if (!confirmed) return null;
-
-  // Fetch full show details for episode_run_time
-  const details = await client.getTvDetails(confirmed.id);
-
-  const year = confirmed.first_air_date
-    ? parseInt(confirmed.first_air_date.substring(0, 4), 10)
-    : undefined;
-
-  return {
-    showId: confirmed.id,
-    showName: confirmed.name,
-    showYear: isNaN(year as number) ? undefined : year,
-    episodeRunTime: details.episode_run_time ?? [],
-  };
 }
 
 /**
@@ -96,14 +122,14 @@ export function classifyAndSortFiles(
       classification = 'unknown';
     } else if (expectedRuntimeMinutes) {
       // Use adaptive thresholds based on expected episode runtime
-      if (durationMinutes >= expectedRuntimeMinutes * 0.5 && durationMinutes <= expectedRuntimeMinutes * 2.5) {
+      if (durationMinutes >= expectedRuntimeMinutes * EPISODE_MIN_RUNTIME_RATIO && durationMinutes <= expectedRuntimeMinutes * EPISODE_MAX_RUNTIME_RATIO) {
         classification = 'episode';
       } else {
         classification = 'extra';
       }
     } else {
-      // No expected runtime: default threshold of 15 minutes
-      classification = durationMinutes >= 15 ? 'episode' : 'extra';
+      // No expected runtime: default threshold
+      classification = durationMinutes >= EPISODE_MIN_DURATION_MINUTES ? 'episode' : 'extra';
     }
 
     classified.push({
@@ -153,9 +179,9 @@ function findTmdbEpisodeByTitle(
     }
   }
 
-  // Require at least 0.6 similarity to consider it a match
+  // Require minimum similarity to consider it a match
   // (handles cases like "Encounter at Farpoint" vs "Encounter at Farpoint, Part 1")
-  if (bestIdx >= 0 && bestSimilarity >= 0.6) {
+  if (bestIdx >= 0 && bestSimilarity >= DVDCOMPARE_TITLE_SIMILARITY_MIN) {
     return { ep: tmdbEpisodes[bestIdx], idx: bestIdx };
   }
 
@@ -294,7 +320,7 @@ export async function matchSeasonBatch(
         if (!tmdbMapping) continue;
 
         const runtimeDiff = Math.abs(durationSeconds - dvdEp.runtimeSeconds);
-        if (runtimeDiff > 3) continue; // Beyond tolerance
+        if (runtimeDiff > DVDCOMPARE_RUNTIME_TOLERANCE_SEC) continue; // Beyond tolerance
 
         const dvdPos = di / maxDvdPos; // 0..1
         const positionalDiff = Math.abs(filePos - dvdPos);
@@ -331,13 +357,13 @@ export async function matchSeasonBatch(
       let combinedRuntime: number | undefined;
       const singleEpRuntime = tmdbEp.runtime;
 
-      if (singleEpRuntime && (durationSeconds / 60) > singleEpRuntime * 1.7) {
+      if (singleEpRuntime && (durationSeconds / 60) > singleEpRuntime * MULTI_EPISODE_RUNTIME_MULTIPLIER) {
         const nextIdx = c.tmdbIdx + 1;
         if (nextIdx < tmdbEpisodes.length && !assignedEps.has(nextIdx)) {
           const nextEp = tmdbEpisodes[nextIdx];
           if (nextEp.runtime) {
             const combined = singleEpRuntime + nextEp.runtime;
-            if (Math.abs(durationSeconds / 60 - combined) <= 5) {
+            if (Math.abs(durationSeconds / 60 - combined) <= MULTI_EPISODE_COMBINED_TOLERANCE_MIN) {
               isMultiEp = true;
               epEndNumber = nextEp.episode_number;
               combinedRuntime = combined;
@@ -351,30 +377,30 @@ export async function matchSeasonBatch(
       assignedEps.add(c.tmdbIdx);
       assignedDvdEps.add(c.dvdIdx);
 
-      const match = createBatchMatch(
-        file,
+      const match = createBatchMatch({
+        classifiedFile: file,
         showId,
         showName,
         showYear,
         season,
-        tmdbEp.episode_number,
-        epEndNumber,
-        isMultiEp
+        episodeNumber: tmdbEp.episode_number,
+        episodeNumberEnd: epEndNumber,
+        episodeTitle: isMultiEp
           ? `${tmdbEp.name} / ${tmdbEpisodes[c.tmdbIdx + 1].name}`
           : tmdbEp.name,
-        isMultiEp ? combinedRuntime : (singleEpRuntime ?? undefined),
-        true,
-        0,
-        template,
-        isMultiEp,
-        singleEpRuntime ?? undefined,
-        tmdbEpisodes.length,
-        seasonEpisodesList,
-        true,  // isDvdCompareMatch
-        c.runtimeDiffSeconds,
-        dvdEp.title,
-        dvdEp.runtimeSeconds,
-      );
+        runtime: isMultiEp ? combinedRuntime : (singleEpRuntime ?? undefined),
+        sequentialPositionMatch: true,
+        runtimeDiff: 0,
+        customTemplate: template,
+        isMultiEpisodeMatch: isMultiEp,
+        singleEpisodeRuntimeMinutes: singleEpRuntime ?? undefined,
+        seasonEpisodeCount: tmdbEpisodes.length,
+        seasonEpisodes: seasonEpisodesList,
+        isDvdCompareMatch: true,
+        dvdCompareRuntimeDiffSeconds: c.runtimeDiffSeconds,
+        dvdCompareTitle: dvdEp.title,
+        dvdCompareRuntimeSeconds: dvdEp.runtimeSeconds,
+      });
       matched.push(match);
 
       logger.batch(
@@ -468,7 +494,7 @@ export async function matchSeasonBatch(
       // ── Multi-episode match (file spans this episode + next) ──────
       if (
         ei + 1 < tmdbEpisodes.length &&
-        fileDuration > epRuntime * 1.7
+        fileDuration > epRuntime * MULTI_EPISODE_RUNTIME_MULTIPLIER
       ) {
         const nextEp = tmdbEpisodes[ei + 1];
         if (nextEp.runtime !== null && nextEp.runtime !== undefined) {
@@ -522,44 +548,42 @@ export async function matchSeasonBatch(
     if (c.isMultiEp && c.epEndIdx !== undefined) {
       const endEp = tmdbEpisodes[c.epEndIdx];
       const combinedRuntime = (ep.runtime ?? 0) + (endEp.runtime ?? 0);
-      const match = createBatchMatch(
-        file,
+      const match = createBatchMatch({
+        classifiedFile: file,
         showId,
         showName,
         showYear,
         season,
-        ep.episode_number,
-        endEp.episode_number,
-        `${ep.name} / ${endEp.name}`,
-        combinedRuntime,
-        c.sequentialMatch,
-        c.runtimeDiff,
-        template,
-        true,
-        ep.runtime ?? undefined,
-        tmdbEpisodes.length,
-        seasonEpisodesList,
-      );
+        episodeNumber: ep.episode_number,
+        episodeNumberEnd: endEp.episode_number,
+        episodeTitle: `${ep.name} / ${endEp.name}`,
+        runtime: combinedRuntime,
+        sequentialPositionMatch: c.sequentialMatch,
+        runtimeDiff: c.runtimeDiff,
+        customTemplate: template,
+        isMultiEpisodeMatch: true,
+        singleEpisodeRuntimeMinutes: ep.runtime ?? undefined,
+        seasonEpisodeCount: tmdbEpisodes.length,
+        seasonEpisodes: seasonEpisodesList,
+      });
       matched.push(match);
     } else {
-      const match = createBatchMatch(
-        file,
+      const match = createBatchMatch({
+        classifiedFile: file,
         showId,
         showName,
         showYear,
         season,
-        ep.episode_number,
-        undefined,
-        ep.name,
-        ep.runtime ?? undefined,
-        c.sequentialMatch,
-        c.runtimeDiff,
-        template,
-        false,
-        ep.runtime ?? undefined,
-        tmdbEpisodes.length,
-        seasonEpisodesList,
-      );
+        episodeNumber: ep.episode_number,
+        episodeTitle: ep.name,
+        runtime: ep.runtime ?? undefined,
+        sequentialPositionMatch: c.sequentialMatch,
+        runtimeDiff: c.runtimeDiff,
+        customTemplate: template,
+        singleEpisodeRuntimeMinutes: ep.runtime ?? undefined,
+        seasonEpisodeCount: tmdbEpisodes.length,
+        seasonEpisodes: seasonEpisodesList,
+      });
       matched.push(match);
     }
 
@@ -591,24 +615,21 @@ export async function matchSeasonBatch(
     assignedEps.add(remainingEps[remEpCursor].idx);
     remEpCursor++;
 
-    const match = createBatchMatch(
-      episodeFiles[fi],
+    const match = createBatchMatch({
+      classifiedFile: episodeFiles[fi],
       showId,
       showName,
       showYear,
       season,
-      ep.episode_number,
-      undefined,
-      ep.name,
-      ep.runtime ?? undefined,
-      true,
-      undefined,
-      template,
-      false,
-      undefined,
-      tmdbEpisodes.length,
-      seasonEpisodesList,
-    );
+      episodeNumber: ep.episode_number,
+      episodeTitle: ep.name,
+      runtime: ep.runtime ?? undefined,
+      sequentialPositionMatch: true,
+      runtimeDiff: undefined,
+      customTemplate: template,
+      seasonEpisodeCount: tmdbEpisodes.length,
+      seasonEpisodes: seasonEpisodesList,
+    });
     matched.push(match);
   }
 
@@ -636,7 +657,7 @@ export async function matchSeasonBatch(
         }
       }
 
-      if (bestDvdEp && bestSimilarity >= 0.6) {
+      if (bestDvdEp && bestSimilarity >= DVDCOMPARE_TITLE_SIMILARITY_MIN) {
         match.dvdCompareRuntimeSeconds = bestDvdEp.runtimeSeconds;
         match.dvdCompareTitle = bestDvdEp.title;
         match.matchSource = 'dvdcompare';
@@ -669,7 +690,7 @@ export async function matchSeasonBatch(
 
         match.confidence = breakdown.total;
         match.confidenceBreakdown = breakdown.items;
-        match.status = breakdown.total >= 60 ? 'matched' : 'ambiguous';
+        match.status = breakdown.total >= CONFIDENCE_MATCHED_THRESHOLD ? 'matched' : 'ambiguous';
 
         logger.batch(
           `DVDCompare enrichment: ${match.mediaFile.fileName} → ` +
@@ -790,8 +811,8 @@ export async function matchSpecialsBatch(
     const bestSpecial = specialsWithRuntime[bestIdx];
     const pctDiff = (bestDiff / bestSpecial.runtime) * 100;
 
-    // Dual threshold: absolute ≤ 15min AND relative ≤ 20%
-    if (bestDiff <= 15 && pctDiff <= 20) {
+    // Dual threshold: absolute AND relative
+    if (bestDiff <= SPECIALS_MAX_DIFF_MINUTES && pctDiff <= SPECIALS_MAX_DIFF_PERCENT) {
       bestSpecial.consumed = true;
 
       const tmdbMatch: TmdbMatchedItem = {
@@ -835,7 +856,7 @@ export async function matchSpecialsBatch(
         confidence: breakdown.total,
         confidenceBreakdown: breakdown.items,
         newFilename,
-        status: breakdown.total >= 60 ? 'matched' : 'ambiguous',
+        status: breakdown.total >= CONFIDENCE_MATCHED_THRESHOLD ? 'matched' : 'ambiguous',
       });
 
       logger.batch(
@@ -857,28 +878,40 @@ export async function matchSpecialsBatch(
   return { matched, unmatched };
 }
 
-function createBatchMatch(
-  classifiedFile: ClassifiedFile,
-  showId: number,
-  showName: string,
-  showYear: number | undefined,
-  season: number,
-  episodeNumber: number,
-  episodeNumberEnd: number | undefined,
-  episodeTitle: string,
-  runtime: number | undefined,
-  sequentialPositionMatch: boolean,
-  runtimeDiff: number | undefined,
-  customTemplate?: string,
-  isMultiEpisodeMatch?: boolean,
-  singleEpisodeRuntimeMinutes?: number,
-  seasonEpisodeCount?: number,
-  seasonEpisodes?: Array<{ episodeNumber: number; episodeName: string; runtime: number | null }>,
-  isDvdCompareMatch?: boolean,
-  dvdCompareRuntimeDiffSeconds?: number,
-  dvdCompareTitle?: string,
-  dvdCompareRuntimeSeconds?: number,
-): MatchResult {
+interface CreateBatchMatchParams {
+  classifiedFile: ClassifiedFile;
+  showId: number;
+  showName: string;
+  showYear: number | undefined;
+  season: number;
+  episodeNumber: number;
+  episodeNumberEnd?: number;
+  episodeTitle: string;
+  runtime: number | undefined;
+  sequentialPositionMatch: boolean;
+  runtimeDiff: number | undefined;
+  customTemplate?: string;
+  isMultiEpisodeMatch?: boolean;
+  singleEpisodeRuntimeMinutes?: number;
+  seasonEpisodeCount?: number;
+  seasonEpisodes?: Array<{ episodeNumber: number; episodeName: string; runtime: number | null }>;
+  isDvdCompareMatch?: boolean;
+  dvdCompareRuntimeDiffSeconds?: number;
+  dvdCompareTitle?: string;
+  dvdCompareRuntimeSeconds?: number;
+}
+
+function createBatchMatch(params: CreateBatchMatchParams): MatchResult {
+  const {
+    classifiedFile, showId, showName, showYear, season,
+    episodeNumber, episodeNumberEnd, episodeTitle, runtime,
+    sequentialPositionMatch, runtimeDiff, customTemplate,
+    isMultiEpisodeMatch, singleEpisodeRuntimeMinutes,
+    seasonEpisodeCount, seasonEpisodes,
+    isDvdCompareMatch, dvdCompareRuntimeDiffSeconds,
+    dvdCompareTitle, dvdCompareRuntimeSeconds,
+  } = params;
+
   const tmdbMatch: TmdbMatchedItem = {
     id: showId,
     name: showName,
@@ -921,7 +954,7 @@ function createBatchMatch(
     confidence: breakdown.total,
     confidenceBreakdown: breakdown.items,
     newFilename,
-    status: breakdown.total >= 60 ? 'matched' : 'ambiguous',
+    status: breakdown.total >= CONFIDENCE_MATCHED_THRESHOLD ? 'matched' : 'ambiguous',
     matchSource: isDvdCompareMatch ? 'dvdcompare' : 'tmdb',
     dvdCompareRuntimeSeconds: isDvdCompareMatch ? dvdCompareRuntimeSeconds : undefined,
     dvdCompareTitle: isDvdCompareMatch ? dvdCompareTitle : undefined,
@@ -932,17 +965,6 @@ function createUnmatchedResult(classifiedFile: ClassifiedFile): MatchResult {
   return {
     mediaFile: classifiedFile.file,
     parsed: { mediaType: MediaType.Unknown, title: classifiedFile.file.fileName },
-    probeData: classifiedFile.probeData,
-    confidence: 0,
-    newFilename: classifiedFile.file.fileName,
-    status: 'unmatched',
-  };
-}
-
-function createExtraResult(classifiedFile: ClassifiedFile): MatchResult {
-  return {
-    mediaFile: classifiedFile.file,
-    parsed: { mediaType: MediaType.TV, title: classifiedFile.file.fileName },
     probeData: classifiedFile.probeData,
     confidence: 0,
     newFilename: classifiedFile.file.fileName,
@@ -1028,7 +1050,7 @@ export function detectAndApplyTrackOrder(
     // Reverse if it's significantly better: < 75% of forward cost (25%+ savings).
     // Also require forward cost to be non-trivial (> 2 min total) to avoid
     // flipping discs that already match well in forward order.
-    if (reverseCost < forwardCost * 0.75 && forwardCost > 2) {
+    if (reverseCost < forwardCost * TRACK_REVERSAL_THRESHOLD && forwardCost > TRACK_REVERSAL_MIN_FORWARD_COST) {
       logger.batch(
         `Disc ${run.disc}: reverse track order detected ` +
         `(forward cost: ${forwardCost.toFixed(1)}min, reverse: ${reverseCost.toFixed(1)}min) ` +

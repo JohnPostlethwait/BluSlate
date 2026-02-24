@@ -1,6 +1,6 @@
 import { confirm, select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
-import type { MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult } from '@mediafetch/core';
+import type { MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult, ShowIdentificationResult } from '@mediafetch/core';
 import { editSingleMatch, displayReviewList, formatRuntimeMmSs } from './editor.js';
 import type { ReviewStatus } from './editor.js';
 import { displayResults } from './display.js';
@@ -174,14 +174,6 @@ async function confirmSingleRename(match: MatchResult): Promise<boolean> {
   });
 }
 
-export async function promptForManualSearch(): Promise<string | null> {
-  const query = await input({
-    message: 'Enter a search query (or press Enter to skip):',
-  });
-
-  return query.trim() || null;
-}
-
 /**
  * Present TMDb search results to the user and ask them to confirm or select the correct show.
  * Returns the confirmed TmdbTvResult, or null if the user skips.
@@ -189,8 +181,24 @@ export async function promptForManualSearch(): Promise<string | null> {
 export async function confirmShowIdentification(
   directoryShowName: string,
   candidates: TmdbTvResult[],
-): Promise<TmdbTvResult | null> {
-  if (candidates.length === 0) return null;
+): Promise<ShowIdentificationResult> {
+  if (candidates.length === 0) {
+    console.log(chalk.yellow(`\nNo TMDb results found for: "${directoryShowName}"\n`));
+    const action = await select({
+      message: 'What would you like to do?',
+      choices: [
+        { name: 'Search with different name', value: 'search' as const },
+        { name: 'Skip this show', value: 'skip' as const },
+      ],
+    });
+
+    if (action === 'search') {
+      const query = await input({ message: 'Enter show name to search:' });
+      if (!query.trim()) return null;
+      return { __retry: query.trim() };
+    }
+    return null;
+  }
 
   const topMatch = candidates[0];
   const year = topMatch.first_air_date
@@ -242,12 +250,7 @@ export async function confirmShowIdentification(
     });
     if (!query.trim()) return null;
 
-    // Return null — the caller should re-search with the new query
-    // We can't do the search here because we don't have the TmdbClient
-    // Instead, we'll signal the caller by returning a special value
-    // Actually, let's just return null and let the pipeline handle it
-    // The user can retry
-    return null;
+    return { __retry: query.trim() };
   }
 
   // User picked an alternative candidate

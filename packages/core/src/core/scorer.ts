@@ -1,5 +1,10 @@
 import { MediaType } from '../types/media.js';
 import type { ParsedFilename, TmdbMatchedItem, ProbeResult, ConfidenceBreakdownItem } from '../types/media.js';
+import {
+  CONFIDENCE_POSITION_POINTS,
+  CONFIDENCE_RUNTIME_MAX_POINTS,
+  CONFIDENCE_MULTI_EPISODE_PENALTY,
+} from '../config/thresholds.js';
 
 export function levenshteinDistance(a: string, b: string): number {
   const m = a.length;
@@ -141,8 +146,8 @@ export function computeBatchConfidenceBreakdown(params: BatchConfidenceParams): 
   const items: ConfidenceBreakdownItem[] = [];
 
   const hasDvdCompare = params.isDvdCompareMatch === true;
-  const positionPoints = 40;
-  const runtimeMaxPoints = 60;
+  const positionPoints = CONFIDENCE_POSITION_POINTS;
+  const runtimeMaxPoints = CONFIDENCE_RUNTIME_MAX_POINTS;
 
   // Sequential position match (+40)
   if (params.sequentialPositionMatch) {
@@ -200,10 +205,10 @@ export function computeBatchConfidenceBreakdown(params: BatchConfidenceParams): 
     items.push({ label: 'Runtime: no data', points: 0, maxPoints: runtimeMaxPoints });
   }
 
-  // Multi-episode penalty (-15)
+  // Multi-episode penalty
   if (params.isMultiEpisodeMatch) {
-    score -= 15;
-    items.push({ label: 'Multi-episode match', points: -15 });
+    score -= CONFIDENCE_MULTI_EPISODE_PENALTY;
+    items.push({ label: 'Multi-episode match', points: -CONFIDENCE_MULTI_EPISODE_PENALTY });
   }
 
   // Relative runtime penalty: penalize when runtime diff is large relative to episode length

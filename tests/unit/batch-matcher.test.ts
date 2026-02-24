@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch, detectAndApplyTrackOrder } from '../../packages/core/src/core/batch-matcher.js';
+import { classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch, detectAndApplyTrackOrder, identifyShow } from '../../packages/core/src/core/batch-matcher.js';
 import { detectPlayAllFiles } from '../../packages/core/src/core/pipeline.js';
 import type { SeasonGroup, MediaFile, ProbeResult, ClassifiedFile } from '../../packages/core/src/types/media.js';
 import type { TmdbSeasonDetails, TmdbEpisode } from '../../packages/core/src/types/tmdb.js';
@@ -1686,5 +1686,171 @@ describe('detectAndApplyTrackOrder', () => {
 
     // Single-file discs can't be reversed
     expect(newOrder).toEqual(originalOrder);
+  });
+});
+
+// ── identifyShow ──────────────────────────────────────────────────────────────
+
+describe('identifyShow', () => {
+  function makeDirectoryContext(showName: string) {
+    return {
+      showName,
+      showNameSource: 'directory',
+    };
+  }
+
+  function makeTvResult(id: number, name: string, year: string = '2020-01-01') {
+    return {
+      id,
+      name,
+      original_name: name,
+      overview: '',
+      first_air_date: year,
+      popularity: 10,
+      vote_average: 8,
+      poster_path: null,
+      origin_country: ['US'],
+      genre_ids: [],
+      backdrop_path: null,
+      vote_count: 100,
+      original_language: 'en',
+    };
+  }
+
+  it('returns IdentifiedShow when user confirms', async () => {
+    const tvResult = makeTvResult(42, 'Breaking Bad', '2008-01-20');
+    const client = {
+      searchTv: vi.fn().mockResolvedValue({ results: [tvResult] }),
+      getTvDetails: vi.fn().mockResolvedValue({ episode_run_time: [47] }),
+    } as unknown as TmdbClient;
+
+    const prompts = {
+      confirmShowIdentification: vi.fn().mockResolvedValue(tvResult),
+      confirmRenames: vi.fn(),
+      confirmDvdCompareSelection: vi.fn(),
+    };
+
+    const result = await identifyShow(client, makeDirectoryContext('Breaking Bad'), prompts);
+
+    expect(result).not.toBeNull();
+    expect(result!.showId).toBe(42);
+    expect(result!.showName).toBe('Breaking Bad');
+    expect(result!.showYear).toBe(2008);
+    expect(result!.episodeRunTime).toEqual([47]);
+  });
+
+  it('returns null when user skips', async () => {
+    const tvResult = makeTvResult(1, 'Some Show');
+    const client = {
+      searchTv: vi.fn().mockResolvedValue({ results: [tvResult] }),
+    } as unknown as TmdbClient;
+
+    const prompts = {
+      confirmShowIdentification: vi.fn().mockResolvedValue(null),
+      confirmRenames: vi.fn(),
+      confirmDvdCompareSelection: vi.fn(),
+    };
+
+    const result = await identifyShow(client, makeDirectoryContext('Some Show'), prompts);
+    expect(result).toBeNull();
+  });
+
+  it('retries search when user sends __retry signal', async () => {
+    const wrongResult = makeTvResult(1, 'Wrong Show');
+    const rightResult = makeTvResult(2, 'Right Show', '2020-05-15');
+
+    const client = {
+      searchTv: vi.fn()
+        .mockResolvedValueOnce({ results: [wrongResult] })
+        .mockResolvedValueOnce({ results: [rightResult] }),
+      getTvDetails: vi.fn().mockResolvedValue({ episode_run_time: [45] }),
+    } as unknown as TmdbClient;
+
+    const prompts = {
+      confirmShowIdentification: vi.fn()
+        .mockResolvedValueOnce({ __retry: 'correct name' })
+        .mockResolvedValueOnce(rightResult),
+      confirmRenames: vi.fn(),
+      confirmDvdCompareSelection: vi.fn(),
+    };
+
+    const result = await identifyShow(client, makeDirectoryContext('wrong name'), prompts);
+
+    expect(client.searchTv).toHaveBeenCalledTimes(2);
+    expect(client.searchTv).toHaveBeenNthCalledWith(1, 'wrong name');
+    expect(client.searchTv).toHaveBeenNthCalledWith(2, 'correct name');
+    expect(result).not.toBeNull();
+    expect(result!.showName).toBe('Right Show');
+  });
+
+  it('allows retry when no results found', async () => {
+    const foundResult = makeTvResult(5, 'Found Show', '2022-03-01');
+
+    const client = {
+      searchTv: vi.fn()
+        .mockResolvedValueOnce({ results: [] })
+        .mockResolvedValueOnce({ results: [foundResult] }),
+      getTvDetails: vi.fn().mockResolvedValue({ episode_run_time: [30] }),
+    } as unknown as TmdbClient;
+
+    const prompts = {
+      confirmShowIdentification: vi.fn()
+        .mockResolvedValueOnce({ __retry: 'better query' })
+        .mockResolvedValueOnce(foundResult),
+      confirmRenames: vi.fn(),
+      confirmDvdCompareSelection: vi.fn(),
+    };
+
+    const result = await identifyShow(client, makeDirectoryContext('bad query'), prompts);
+
+    expect(client.searchTv).toHaveBeenCalledTimes(2);
+    expect(prompts.confirmShowIdentification).toHaveBeenNthCalledWith(1, 'bad query', []);
+    expect(result!.showName).toBe('Found Show');
+  });
+
+  it('supports multiple retries before confirming', async () => {
+    const finalResult = makeTvResult(10, 'Final Show', '2021-01-01');
+
+    const client = {
+      searchTv: vi.fn()
+        .mockResolvedValueOnce({ results: [makeTvResult(1, 'Attempt 1')] })
+        .mockResolvedValueOnce({ results: [makeTvResult(2, 'Attempt 2')] })
+        .mockResolvedValueOnce({ results: [finalResult] }),
+      getTvDetails: vi.fn().mockResolvedValue({ episode_run_time: [60] }),
+    } as unknown as TmdbClient;
+
+    const prompts = {
+      confirmShowIdentification: vi.fn()
+        .mockResolvedValueOnce({ __retry: 'second try' })
+        .mockResolvedValueOnce({ __retry: 'third try' })
+        .mockResolvedValueOnce(finalResult),
+      confirmRenames: vi.fn(),
+      confirmDvdCompareSelection: vi.fn(),
+    };
+
+    const result = await identifyShow(client, makeDirectoryContext('first try'), prompts);
+
+    expect(client.searchTv).toHaveBeenCalledTimes(3);
+    expect(client.searchTv).toHaveBeenNthCalledWith(1, 'first try');
+    expect(client.searchTv).toHaveBeenNthCalledWith(2, 'second try');
+    expect(client.searchTv).toHaveBeenNthCalledWith(3, 'third try');
+    expect(result!.showName).toBe('Final Show');
+  });
+
+  it('returns null when no results and user skips', async () => {
+    const client = {
+      searchTv: vi.fn().mockResolvedValue({ results: [] }),
+    } as unknown as TmdbClient;
+
+    const prompts = {
+      confirmShowIdentification: vi.fn().mockResolvedValue(null),
+      confirmRenames: vi.fn(),
+      confirmDvdCompareSelection: vi.fn(),
+    };
+
+    const result = await identifyShow(client, makeDirectoryContext('nonexistent'), prompts);
+
+    expect(result).toBeNull();
+    expect(prompts.confirmShowIdentification).toHaveBeenCalledWith('nonexistent', []);
   });
 });

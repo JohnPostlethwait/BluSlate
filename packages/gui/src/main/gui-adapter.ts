@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult } from '@mediafetch/core';
+import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult, ShowIdentificationResult } from '@mediafetch/core';
 
 /**
  * Error thrown when the user cancels the pipeline mid-execution.
@@ -89,7 +89,7 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
       confirmShowIdentification(
         directoryShowName: string,
         candidates: TmdbTvResult[],
-      ): Promise<TmdbTvResult | null> {
+      ): Promise<ShowIdentificationResult> {
         return new Promise((resolve) => {
           mainWindow.webContents.send('prompt:confirmShow', {
             showName: directoryShowName,

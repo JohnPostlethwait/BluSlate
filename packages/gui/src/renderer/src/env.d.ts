@@ -23,7 +23,7 @@ interface Window {
     onConfirmRenames: (callback: (data: { matches: MatchResultData[] }) => void) => () => void;
     respondConfirmRenames: (confirmed: MatchResultData[]) => void;
     onConfirmShow: (callback: (data: { showName: string; candidates: ShowCandidate[] }) => void) => () => void;
-    respondConfirmShow: (selected: ShowCandidate | null) => void;
+    respondConfirmShow: (selected: ShowCandidate | { __retry: string } | null) => void;
     onConfirmDvdCompare: (callback: (data: { showName: string; candidates: DvdCompareCandidate[] }) => void) => () => void;
     respondConfirmDvdCompare: (selected: DvdCompareCandidate[]) => void;
     onPipelineComplete: (callback: (data: { success: boolean }) => void) => () => void;

@@ -35,6 +35,3 @@ export function stopSpinner(): void {
   }
 }
 
-export function progressText(current: number, total: number, fileName: string): string {
-  return `[${current}/${total}] Processing: ${fileName}`;
-}

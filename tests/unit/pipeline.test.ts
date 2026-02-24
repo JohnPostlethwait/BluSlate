@@ -69,6 +69,7 @@ import { MediaType } from '../../packages/core/src/types/media.js';
 import { FatalError, AuthenticationError } from '../../packages/core/src/errors.js';
 import type { AppConfig } from '../../packages/core/src/types/config.js';
 import type { UIAdapter } from '../../packages/core/src/types/ui-adapter.js';
+import { makeMediaFile } from '../fixtures/test-builders.js';
 
 const mockedScanDirectory = vi.mocked(scanDirectory);
 const mockedParseFilename = vi.mocked(parseFilename);
@@ -111,15 +112,6 @@ function makeUIAdapter(): UIAdapter {
       displayResults: vi.fn(),
       displaySummary: vi.fn(),
     },
-  };
-}
-
-function makeMediaFile(name: string) {
-  return {
-    filePath: `/media/${name}`,
-    fileName: name,
-    extension: name.substring(name.lastIndexOf('.')),
-    sizeBytes: 700_000_000,
   };
 }
 

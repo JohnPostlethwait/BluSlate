@@ -184,6 +184,13 @@
     currentView = 'running';
   }
 
+  function handleShowRetry(query: string) {
+    window.api.respondConfirmShow({ __retry: query });
+    showPrompt = null;
+    currentView = 'running';
+    progressMessage = `Searching TMDb for "${query}"...`;
+  }
+
   function handleDvdCompareSelect(selected: DvdCompareCandidate[]) {
     // Unwrap Svelte 5 $state proxy so Electron IPC structured clone works
     window.api.respondConfirmDvdCompare(JSON.parse(JSON.stringify(selected)));
@@ -250,6 +257,7 @@
       candidates={showPrompt.candidates}
       onselect={handleShowSelect}
       oncancel={handleReset}
+      onretry={handleShowRetry}
     />
   {:else if currentView === 'dvdCompareSelect' && dvdComparePrompt}
     <DvdCompareSelector

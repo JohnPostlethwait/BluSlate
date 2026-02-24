@@ -7,6 +7,7 @@ import { shouldUseBatchMode, groupFilesBySeason } from './directory-parser.js';
 import { identifyShow, classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch } from './batch-matcher.js';
 import { searchDvdCompare, fetchDiscEpisodeData } from '../api/dvdcompare-client.js';
 import { TmdbClient } from '../api/tmdb-client.js';
+import { PLAY_ALL_DURATION_MULTIPLIER, PLAY_ALL_SIZE_MULTIPLIER } from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
 import { FatalError } from '../errors.js';
 import { MediaType } from '../types/media.js';
@@ -59,10 +60,10 @@ export function detectPlayAllFiles(
   for (const cf of candidates) {
     const isRuntimeOutlier =
       cf.durationMinutes !== undefined && medianDuration > 0 &&
-      cf.durationMinutes > medianDuration * 2.5;
+      cf.durationMinutes > medianDuration * PLAY_ALL_DURATION_MULTIPLIER;
 
     const isSizeOutlier =
-      medianSize > 0 && cf.file.sizeBytes > medianSize * 3;
+      medianSize > 0 && cf.file.sizeBytes > medianSize * PLAY_ALL_SIZE_MULTIPLIER;
 
     if (isRuntimeOutlier || isSizeOutlier) {
       flagged.add(cf.file.filePath);

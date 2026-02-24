@@ -3,29 +3,7 @@ import { findMatch } from '../../packages/core/src/core/matcher.js';
 import { MediaType } from '../../packages/core/src/types/media.js';
 import type { MediaFile, ParsedFilename, ProbeResult } from '../../packages/core/src/types/media.js';
 import type { TmdbSearchTvResponse, TmdbSearchMovieResponse, TmdbSeasonDetails, TmdbMovieDetails } from '../../packages/core/src/types/tmdb.js';
-
-// --- Test helpers ---
-
-function makeMediaFile(name: string): MediaFile {
-  return {
-    filePath: `/media/${name}`,
-    fileName: name,
-    extension: name.substring(name.lastIndexOf('.')),
-    sizeBytes: 700_000_000,
-  };
-}
-
-function makeParsedTv(title: string, season: number, episodes: number[]): ParsedFilename {
-  return { mediaType: MediaType.TV, title, season, episodeNumbers: episodes };
-}
-
-function makeParsedMovie(title: string, year?: number): ParsedFilename {
-  return { mediaType: MediaType.Movie, title, year };
-}
-
-function makeParsedUnknown(title: string): ParsedFilename {
-  return { mediaType: MediaType.Unknown, title };
-}
+import { makeMediaFile, makeParsedTv, makeParsedMovie, makeParsedUnknown } from '../fixtures/test-builders.js';
 
 function makeTvSearchResponse(results: Array<{ id: number; name: string; first_air_date?: string }>): TmdbSearchTvResponse {
   return {

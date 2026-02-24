@@ -3,6 +3,14 @@ import type { TmdbTvResult } from './tmdb.js';
 import type { TmdbClient } from '../api/tmdb-client.js';
 import type { DvdCompareSearchResult } from '../api/dvdcompare-client.js';
 
+/** Signal from the UI that the user wants to retry with a different search query. */
+export interface ShowRetrySignal {
+  __retry: string;
+}
+
+/** Result of show identification: a confirmed show, a retry signal, or null (skip). */
+export type ShowIdentificationResult = TmdbTvResult | ShowRetrySignal | null;
+
 /** Progress reporting — spinners, progress bars, status updates */
 export interface ProgressReporter {
   start(message: string): void;
@@ -26,7 +34,7 @@ export interface UserPrompter {
   confirmShowIdentification(
     directoryShowName: string,
     candidates: TmdbTvResult[],
-  ): Promise<TmdbTvResult | null>;
+  ): Promise<ShowIdentificationResult>;
 
   /**
    * Present DVDCompare search results to the user and ask them to select
