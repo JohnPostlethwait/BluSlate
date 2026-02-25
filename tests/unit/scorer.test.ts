@@ -128,7 +128,7 @@ describe('computeConfidence', () => {
 describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
   it('should give 100 points for perfect DVDCompare match (40+60)', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 0.2,
@@ -142,7 +142,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should deduct 1 point per second of DVDCompare drift (40+58=98)', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 2.5,
@@ -154,7 +154,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should apply -15 penalty for multi-episode DVDCompare match (40+60-15=85)', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 0.1,
@@ -168,7 +168,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should score 45 with no position match and 15s DVDCompare drift', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 15,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 15,
@@ -177,13 +177,13 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
     // 0 (position) + round(60 - 15) = 45 (DVDCompare runtime) = 45
     expect(result.total).toBe(45);
     expect(result.items).toHaveLength(2);
-    expect(result.items.find(i => i.label.includes('No sequential'))).toBeDefined();
+    expect(result.items.find(i => i.label.includes('No position match'))).toBeDefined();
     expect(result.items.find(i => i.label.includes('DVDCompare'))).toBeDefined();
   });
 
   it('should label runtime as DVDCompare when DVDCompare data is present', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 2,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 5,
@@ -196,7 +196,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should not apply relative runtime penalty when DVDCompare is present', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 20,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 1,
@@ -209,7 +209,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should give 0 runtime points for DVDCompare drift >= 60s', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 75,
@@ -224,7 +224,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should give 53 runtime points for 7s DVDCompare drift (40+53=93)', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 7,
@@ -237,7 +237,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should give 30 runtime points for 30s DVDCompare drift (40+30=70)', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 30,
@@ -250,7 +250,7 @@ describe('computeBatchConfidenceBreakdown — DVDCompare scoring', () => {
 
   it('should give 0 runtime points at exactly 60s DVDCompare drift (40+0=40)', () => {
     const result = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isDvdCompareMatch: true,
       dvdCompareRuntimeDiffSeconds: 60,

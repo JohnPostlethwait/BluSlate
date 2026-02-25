@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch, detectAndApplyTrackOrder, identifyShow } from '../../packages/core/src/core/batch-matcher.js';
+import { classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch, detectAndApplyTrackOrder, identifyShow, buildUnifiedEpisodeRefs } from '../../packages/core/src/core/batch-matcher.js';
+import type { UnifiedEpisodeRef } from '../../packages/core/src/core/batch-matcher.js';
 import { detectPlayAllFiles } from '../../packages/core/src/core/pipeline.js';
 import type { SeasonGroup, MediaFile, ProbeResult, ClassifiedFile } from '../../packages/core/src/types/media.js';
 import type { TmdbSeasonDetails, TmdbEpisode } from '../../packages/core/src/types/tmdb.js';
@@ -191,7 +192,7 @@ describe('classifyAndSortFiles', () => {
 describe('computeBatchConfidence', () => {
   it('should give max confidence for position match + exact runtime', () => {
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
     });
 
@@ -201,7 +202,7 @@ describe('computeBatchConfidence', () => {
 
   it('should give 40 for position match + no runtime data', () => {
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: undefined,
     });
 
@@ -211,7 +212,7 @@ describe('computeBatchConfidence', () => {
 
   it('should give reduced score for large runtime diff', () => {
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 8,
     });
 
@@ -221,7 +222,7 @@ describe('computeBatchConfidence', () => {
 
   it('should give 0 for runtime diff ≥60min with no position match', () => {
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 65,
     });
 
@@ -233,7 +234,7 @@ describe('computeBatchConfidence', () => {
   it('should use percentage-based scoring when isSpecialsMatch is true', () => {
     // 6min diff on 132min episode = 4.5% → ≤5% → 60 pts
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 6,
       isSpecialsMatch: true,
       tmdbRuntimeMinutes: 132,
@@ -246,7 +247,7 @@ describe('computeBatchConfidence', () => {
   it('should give 45 runtime points for 5-10% diff in specials mode', () => {
     // 10min diff on 132min episode = 7.6% → ≤10% → 45 pts
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 10,
       isSpecialsMatch: true,
       tmdbRuntimeMinutes: 132,
@@ -259,7 +260,7 @@ describe('computeBatchConfidence', () => {
   it('should give 25 runtime points for 10-15% diff in specials mode', () => {
     // 14min diff on 100min episode = 14% → ≤15% → 25 pts
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 14,
       isSpecialsMatch: true,
       tmdbRuntimeMinutes: 100,
@@ -272,7 +273,7 @@ describe('computeBatchConfidence', () => {
   it('should give 0 runtime points for >15% diff in specials mode', () => {
     // 20min diff on 100min episode = 20% → >15% → 0 pts
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 20,
       isSpecialsMatch: true,
       tmdbRuntimeMinutes: 100,
@@ -285,7 +286,7 @@ describe('computeBatchConfidence', () => {
   it('should fall back to continuous scoring when tmdbRuntimeMinutes is missing', () => {
     // isSpecialsMatch true but no tmdbRuntimeMinutes → uses continuous scoring
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 2,
       isSpecialsMatch: true,
       // tmdbRuntimeMinutes omitted
@@ -298,7 +299,7 @@ describe('computeBatchConfidence', () => {
   // Multi-episode and relative runtime penalty tests
   it('should penalize multi-episode matches by 15 points', () => {
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isMultiEpisodeMatch: true,
       singleEpisodeRuntimeMinutes: 44,
@@ -311,7 +312,7 @@ describe('computeBatchConfidence', () => {
   it('should apply relative runtime penalty for >15% diff on short episodes', () => {
     // 5min diff on 22min sitcom = 22.7% → >15% → -10
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 5,
       singleEpisodeRuntimeMinutes: 22,
     });
@@ -323,7 +324,7 @@ describe('computeBatchConfidence', () => {
   it('should apply smaller penalty for 10-15% relative diff', () => {
     // 5min diff on 44min drama = 11.4% → 10-15% → -5
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 5,
       singleEpisodeRuntimeMinutes: 44,
     });
@@ -335,7 +336,7 @@ describe('computeBatchConfidence', () => {
   it('should not apply relative penalty for tight matches (<=10%)', () => {
     // 2min diff on 44min drama = 4.5% → ≤10% → no penalty
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 2,
       singleEpisodeRuntimeMinutes: 44,
     });
@@ -347,7 +348,7 @@ describe('computeBatchConfidence', () => {
   it('should stack multi-episode and relative penalties', () => {
     // Multi-ep match with 8min combined diff on 22min sitcom = 36.4%
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 8,
       isMultiEpisodeMatch: true,
       singleEpisodeRuntimeMinutes: 22,
@@ -360,7 +361,7 @@ describe('computeBatchConfidence', () => {
   it('should not apply relative penalty when isSpecialsMatch is true', () => {
     // Specials already use their own percentage-based scoring
     const confidence = computeBatchConfidence({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 6,
       isSpecialsMatch: true,
       tmdbRuntimeMinutes: 132,
@@ -374,35 +375,61 @@ describe('computeBatchConfidence', () => {
 
 describe('computeBatchConfidenceBreakdown', () => {
   it('should return total matching computeBatchConfidence for max confidence', () => {
-    const params = { sequentialPositionMatch: true, runtimeDiffMinutes: 0 };
+    const params = { positionalDiff: 0, runtimeDiffMinutes: 0 };
     const breakdown = computeBatchConfidenceBreakdown(params);
     expect(breakdown.total).toBe(100); // 40 + 60
     expect(breakdown.total).toBe(computeBatchConfidence(params));
   });
 
-  it('should include sequential match item with +40 when matched', () => {
+  it('should include position match item with +40 at positionalDiff=0', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 2,
     });
-    const seqItem = breakdown.items.find((i) => i.label.includes('Sequential'));
-    expect(seqItem).toBeDefined();
-    expect(seqItem!.points).toBe(40);
+    const posItem = breakdown.items.find((i) => i.label.includes('Position match') || i.label.includes('position match'));
+    expect(posItem).toBeDefined();
+    expect(posItem!.points).toBe(40);
   });
 
-  it('should include sequential match item with 0 when not matched', () => {
+  it('should include position match item with 0 at positionalDiff=1.0', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 2,
     });
-    const seqItem = breakdown.items.find((i) => i.label.includes('sequential') || i.label.includes('Sequential'));
-    expect(seqItem).toBeDefined();
-    expect(seqItem!.points).toBe(0);
+    const posItem = breakdown.items.find((i) => i.label.includes('No position match'));
+    expect(posItem).toBeDefined();
+    expect(posItem!.points).toBe(0);
+  });
+
+  it('should give graduated position score at positionalDiff=0.25', () => {
+    const breakdown = computeBatchConfidenceBreakdown({
+      positionalDiff: 0.25,
+      runtimeDiffMinutes: 0,
+    });
+    const posItem = breakdown.items.find((i) => i.label.includes('Position match'));
+    expect(posItem).toBeDefined();
+    // round(40 * (1 - 0.25)) = round(30) = 30
+    expect(posItem!.points).toBe(30);
+    // 30 + 60 = 90
+    expect(breakdown.total).toBe(90);
+  });
+
+  it('should give graduated position score at positionalDiff=0.5', () => {
+    const breakdown = computeBatchConfidenceBreakdown({
+      positionalDiff: 0.5,
+      runtimeDiffMinutes: 0,
+    });
+    const posItem = breakdown.items.find((i) => i.label.includes('Position match'));
+    expect(posItem).toBeDefined();
+    // round(40 * (1 - 0.5)) = round(20) = 20
+    expect(posItem!.points).toBe(20);
+    // 20 + 60 = 80
+    expect(breakdown.total).toBe(80);
   });
 
   it('should show +59 runtime for 1min diff (continuous deduction)', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 1,
     });
     const rtItem = breakdown.items.find((i) => i.label.includes('Runtime'));
@@ -413,7 +440,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should show +57 runtime for 3min diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 3,
     });
     const rtItem = breakdown.items.find((i) => i.label.includes('Runtime'));
@@ -424,7 +451,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should show +56 runtime for 4min diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 4,
     });
     const rtItem = breakdown.items.find((i) => i.label.includes('Runtime'));
@@ -434,7 +461,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should show +52 runtime for 8min diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 8,
     });
     const rtItem = breakdown.items.find((i) => i.label.includes('Runtime'));
@@ -444,7 +471,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should show +0 runtime for ≥60min diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 65,
     });
     const rtItem = breakdown.items.find((i) => i.label.includes('Runtime'));
@@ -454,7 +481,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should show "no data" when runtime is undefined', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: undefined,
     });
     const rtItem = breakdown.items.find((i) => i.label.includes('no data'));
@@ -464,7 +491,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should include multi-episode penalty item', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
       isMultiEpisodeMatch: true,
       singleEpisodeRuntimeMinutes: 44,
@@ -477,7 +504,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should not include multi-episode item when not a multi-episode match', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 0,
     });
     const multiItem = breakdown.items.find((i) => i.label.includes('Multi-episode'));
@@ -486,7 +513,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should include relative runtime penalty for >15% diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 5,
       singleEpisodeRuntimeMinutes: 22, // 22.7%
     });
@@ -498,7 +525,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should include smaller relative penalty for 10-15% diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 5,
       singleEpisodeRuntimeMinutes: 44, // 11.4%
     });
@@ -510,7 +537,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('should not include relative penalty for ≤10% diff', () => {
     const breakdown = computeBatchConfidenceBreakdown({
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 2,
       singleEpisodeRuntimeMinutes: 44, // 4.5%
     });
@@ -521,7 +548,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('breakdown total should always match computeBatchConfidence for stacked penalties', () => {
     const params = {
-      sequentialPositionMatch: true,
+      positionalDiff: 0,
       runtimeDiffMinutes: 8,
       isMultiEpisodeMatch: true,
       singleEpisodeRuntimeMinutes: 22,
@@ -534,7 +561,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('breakdown total should match for specials percentage-based scoring', () => {
     const params = {
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 10,
       isSpecialsMatch: true,
       tmdbRuntimeMinutes: 132,
@@ -549,7 +576,7 @@ describe('computeBatchConfidenceBreakdown', () => {
 
   it('breakdown items should sum to total (or be clamped to 0)', () => {
     const params = {
-      sequentialPositionMatch: false,
+      positionalDiff: 1.0,
       runtimeDiffMinutes: 15,
     };
     const breakdown = computeBatchConfidenceBreakdown(params);
@@ -761,6 +788,58 @@ describe('matchSeasonBatch', () => {
         expect(epNum).toBeLessThanOrEqual(3);
       } else {
         expect(epNum).toBeGreaterThanOrEqual(4);
+      }
+    }
+  });
+
+  it('should enforce disc episode ranges preventing cross-disc matching', async () => {
+    // 12 files across 3 discs with IDENTICAL runtimes. Without disc range
+    // constraints, the greedy matcher could assign a Disc 3 file to an early
+    // episode if runtimes happen to align. With constraints, each disc only
+    // matches its proportional episode range.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, Array.from({ length: 12 }, (_, i) => ({
+      ...makeTmdbEpisode(i + 1, `Episode ${i + 1}`, 46),
+      season_number: 1,
+    }))));
+    const client = makeSeasonMockClient(seasonMap);
+
+    const files: ClassifiedFile[] = [
+      // Disc 1: 4 files → should get eps 1-4
+      makeEpisodeFile(1, 1, 46.1),
+      makeEpisodeFile(1, 2, 46.2),
+      makeEpisodeFile(1, 3, 45.9),
+      makeEpisodeFile(1, 4, 46.0),
+      // Disc 2: 4 files → should get eps 5-8
+      makeEpisodeFile(2, 1, 46.0),
+      makeEpisodeFile(2, 2, 46.1),
+      makeEpisodeFile(2, 3, 45.8),
+      makeEpisodeFile(2, 4, 46.3),
+      // Disc 3: 4 files → should get eps 9-12
+      makeEpisodeFile(3, 1, 46.2),
+      makeEpisodeFile(3, 2, 45.9),
+      makeEpisodeFile(3, 3, 46.0),
+      makeEpisodeFile(3, 4, 46.1),
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2009, 1, files);
+
+    expect(result.matched).toHaveLength(12);
+    expect(result.reclassifiedExtras).toHaveLength(0);
+
+    for (const m of result.matched) {
+      const path = m.mediaFile.filePath;
+      const epNum = m.tmdbMatch?.episodeNumber!;
+
+      if (path.includes('S1D1')) {
+        expect(epNum).toBeGreaterThanOrEqual(1);
+        expect(epNum).toBeLessThanOrEqual(4);
+      } else if (path.includes('S1D2')) {
+        expect(epNum).toBeGreaterThanOrEqual(5);
+        expect(epNum).toBeLessThanOrEqual(8);
+      } else if (path.includes('S1D3')) {
+        expect(epNum).toBeGreaterThanOrEqual(9);
+        expect(epNum).toBeLessThanOrEqual(12);
       }
     }
   });
@@ -1215,6 +1294,622 @@ describe('matchSeasonBatch with DVDCompare data', () => {
   });
 });
 
+describe('matchSeasonBatch with cross-season track order hint', () => {
+  // Helper to create TNG-style file paths matching the user's actual Blu-ray rips
+  function makeTngFile(
+    season: number,
+    disc: number,
+    track: number,
+    durationSeconds: number,
+  ): ClassifiedFile {
+    const name = `Star Trek- The Next Generation Season ${season} Disc ${disc}_t${String(track).padStart(2, '0')}.mkv`;
+    const dir = `Star Trek- The Next Generation Season ${season} Disc ${disc}`;
+    return {
+      file: {
+        filePath: `/shows/${dir}/${name}`,
+        fileName: name,
+        extension: '.mkv',
+        sizeBytes: 7_000_000_000,
+      },
+      probeData: { durationMinutes: durationSeconds / 60, durationSeconds },
+      classification: 'episode',
+      durationMinutes: durationSeconds / 60,
+      sortOrder: disc * 1000 + track,
+    };
+  }
+
+  it('should correctly assign TNG S2 Disc 1 episodes with reverse hint from S1', async () => {
+    // TNG S2 has 22 episodes, all 46 min on TMDb. DVDCompare runtimes are within
+    // 20 seconds of each other per disc. File runtimes are all ~2min longer than
+    // DVDCompare (Blu-ray overhead). Without a hint, forward/reverse costs are
+    // nearly identical and detection can't distinguish. With a 'reverse' hint
+    // from S1, the tracks are correctly reversed and positional matching works.
+    //
+    // Actual user data: t12 is S02E01 (The Child), t08 is S02E05 (Loud as a Whisper).
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(2, makeSeasonDetails(2, [
+      { ...makeTmdbEpisode(1, 'The Child', 46), season_number: 2 },
+      { ...makeTmdbEpisode(2, 'Where Silence Has Lease', 46), season_number: 2 },
+      { ...makeTmdbEpisode(3, 'Elementary, Dear Data', 46), season_number: 2 },
+      { ...makeTmdbEpisode(4, 'The Outrageous Okona', 46), season_number: 2 },
+      { ...makeTmdbEpisode(5, 'Loud as a Whisper', 46), season_number: 2 },
+      { ...makeTmdbEpisode(6, 'The Schizoid Man', 46), season_number: 2 },
+      { ...makeTmdbEpisode(7, 'Unnatural Selection', 46), season_number: 2 },
+      { ...makeTmdbEpisode(8, 'A Matter of Honor', 46), season_number: 2 },
+      { ...makeTmdbEpisode(9, 'The Measure of a Man', 46), season_number: 2 },
+      { ...makeTmdbEpisode(10, 'The Dauphin', 46), season_number: 2 },
+      { ...makeTmdbEpisode(11, 'Contagion', 46), season_number: 2 },
+      { ...makeTmdbEpisode(12, 'The Royale', 46), season_number: 2 },
+      { ...makeTmdbEpisode(13, 'Time Squared', 46), season_number: 2 },
+      { ...makeTmdbEpisode(14, 'The Icarus Factor', 46), season_number: 2 },
+      { ...makeTmdbEpisode(15, 'Pen Pals', 46), season_number: 2 },
+      { ...makeTmdbEpisode(16, 'Q Who', 46), season_number: 2 },
+      { ...makeTmdbEpisode(17, 'Samaritan Snare', 46), season_number: 2 },
+      { ...makeTmdbEpisode(18, 'Up the Long Ladder', 46), season_number: 2 },
+      { ...makeTmdbEpisode(19, 'Manhunt', 46), season_number: 2 },
+      { ...makeTmdbEpisode(20, 'The Emissary', 46), season_number: 2 },
+      { ...makeTmdbEpisode(21, 'Peak Performance', 46), season_number: 2 },
+      { ...makeTmdbEpisode(22, 'Shades of Gray', 46), season_number: 2 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // DVDCompare data for all 5 discs of Season 2
+    const dvdCompareDiscs = [
+      {
+        discNumber: 1,
+        discLabel: 'DISC ONE',
+        episodes: [
+          { title: 'The Child', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Where Silence Has Lease', runtimeSeconds: 2744, runtimeFormatted: '45:44' },
+          { title: 'Elementary, Dear Data', runtimeSeconds: 2739, runtimeFormatted: '45:39' },
+          { title: 'The Outrageous Okona', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Loud as a Whisper', runtimeSeconds: 2724, runtimeFormatted: '45:24' },
+        ],
+      },
+      {
+        discNumber: 2,
+        discLabel: 'DISC TWO',
+        episodes: [
+          { title: 'The Schizoid Man', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Unnatural Selection', runtimeSeconds: 2714, runtimeFormatted: '45:14' },
+          { title: 'A Matter of Honor', runtimeSeconds: 2728, runtimeFormatted: '45:28' },
+          { title: 'The Measure of a Man', runtimeSeconds: 2734, runtimeFormatted: '45:34' },
+        ],
+      },
+      {
+        discNumber: 3,
+        discLabel: 'DISC THREE',
+        episodes: [
+          { title: 'The Dauphin', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'Contagion', runtimeSeconds: 2732, runtimeFormatted: '45:32' },
+          { title: 'The Royale', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Time Squared', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'The Icarus Factor', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+        ],
+      },
+      {
+        discNumber: 4,
+        discLabel: 'DISC FOUR',
+        episodes: [
+          { title: 'Pen Pals', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Q Who?', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Samaritan Snare', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'Up the Long Ladder', runtimeSeconds: 2726, runtimeFormatted: '45:26' },
+          { title: 'Manhunt', runtimeSeconds: 2725, runtimeFormatted: '45:25' },
+        ],
+      },
+      {
+        discNumber: 5,
+        discLabel: 'DISC FIVE',
+        episodes: [
+          { title: 'The Emissary', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Peak Performance', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'Shades of Gray', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+        ],
+      },
+    ];
+
+    // Files from all 5 discs of the user's actual Blu-ray rip.
+    // All discs are reverse chronological: highest track = first episode on that disc.
+    // File durations ~2min longer than DVDCompare (Blu-ray headers/padding).
+    // Disc 1 (5 ep): t08-t12, Disc 2 (4 ep): t05-t08, Disc 3 (5 ep): t05-t09,
+    // Disc 4 (5 ep): t05-t09, Disc 5 (3 ep): t05-t07
+    const episodeFiles: ClassifiedFile[] = [
+      // Disc 1 — E01-E05 reversed
+      makeTngFile(2, 1, 8, 2852),   // 47:32 — actually E05 Loud as a Whisper
+      makeTngFile(2, 1, 9, 2859),   // 47:39 — actually E04 The Outrageous Okona
+      makeTngFile(2, 1, 10, 2868),  // 47:48 — actually E03 Elementary, Dear Data
+      makeTngFile(2, 1, 11, 2873),  // 47:53 — actually E02 Where Silence Has Lease
+      makeTngFile(2, 1, 12, 2860),  // 47:40 — actually E01 The Child
+      // Disc 2 — E06-E09 reversed
+      makeTngFile(2, 2, 5, 2862),   // actually E09 The Measure of a Man
+      makeTngFile(2, 2, 6, 2856),   // actually E08 A Matter of Honor
+      makeTngFile(2, 2, 7, 2842),   // actually E07 Unnatural Selection
+      makeTngFile(2, 2, 8, 2857),   // actually E06 The Schizoid Man
+      // Disc 3 — E10-E14 reversed
+      makeTngFile(2, 3, 5, 2858),   // actually E14 The Icarus Factor
+      makeTngFile(2, 3, 6, 2858),   // actually E13 Time Squared
+      makeTngFile(2, 3, 7, 2857),   // actually E12 The Royale
+      makeTngFile(2, 3, 8, 2860),   // actually E11 Contagion
+      makeTngFile(2, 3, 9, 2858),   // actually E10 The Dauphin
+      // Disc 4 — E15-E19 reversed
+      makeTngFile(2, 4, 5, 2853),   // actually E19 Manhunt
+      makeTngFile(2, 4, 6, 2854),   // actually E18 Up the Long Ladder
+      makeTngFile(2, 4, 7, 2858),   // actually E17 Samaritan Snare
+      makeTngFile(2, 4, 8, 2857),   // actually E16 Q Who
+      makeTngFile(2, 4, 9, 2857),   // actually E15 Pen Pals
+      // Disc 5 — E20-E22 reversed
+      makeTngFile(2, 5, 5, 2857),   // actually E22 Shades of Gray
+      makeTngFile(2, 5, 6, 2858),   // actually E21 Peak Performance
+      makeTngFile(2, 5, 7, 2859),   // actually E20 The Emissary
+    ];
+
+    // Pass 'reverse' hint from S1's detected track order
+    const result = await matchSeasonBatch(
+      client, 655, 'Star Trek: The Next Generation', 1987,
+      2, episodeFiles, undefined, dvdCompareDiscs, 'reverse',
+    );
+
+    expect(result.matched).toHaveLength(22);
+    expect(result.reclassifiedExtras).toHaveLength(0);
+    expect(result.detectedTrackOrder).toBe('reverse');
+
+    // Build assignment map: "D{disc}_t{track}" → episode number
+    const assignments = new Map<string, number>();
+    for (const m of result.matched) {
+      const discMatch = m.mediaFile.filePath.match(/Disc (\d+)/);
+      const trackMatch = m.mediaFile.fileName.match(/_t(\d+)\./);
+      const key = `D${discMatch?.[1]}_t${trackMatch?.[1]}`;
+      assignments.set(key, m.tmdbMatch?.episodeNumber ?? -1);
+    }
+
+    // Disc 1 reversed: t12→E01, t11→E02, t10→E03, t09→E04, t08→E05
+    expect(assignments.get('D1_t12')).toBe(1);  // The Child
+    expect(assignments.get('D1_t11')).toBe(2);  // Where Silence Has Lease
+    expect(assignments.get('D1_t10')).toBe(3);  // Elementary, Dear Data
+    expect(assignments.get('D1_t09')).toBe(4);  // The Outrageous Okona
+    expect(assignments.get('D1_t08')).toBe(5);  // Loud as a Whisper
+
+    // Disc 2 reversed: t08→E06, t07→E07, t06→E08, t05→E09
+    expect(assignments.get('D2_t08')).toBe(6);  // The Schizoid Man
+    expect(assignments.get('D2_t07')).toBe(7);  // Unnatural Selection
+    expect(assignments.get('D2_t06')).toBe(8);  // A Matter of Honor
+    expect(assignments.get('D2_t05')).toBe(9);  // The Measure of a Man
+  });
+
+  it('should propagate detectedTrackOrder in result for pipeline to use', async () => {
+    // Verify that matchSeasonBatch returns the detected track order
+    // so the pipeline can pass it as a hint to subsequent seasons
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Episode 1', 68), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Episode 2', 91), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 1, 91),  // Reversed: this is actually E2
+      makeEpisodeFile(1, 2, 68),  // Reversed: this is actually E1
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2020, 1, files);
+
+    // The result should include detectedTrackOrder
+    expect(result.detectedTrackOrder).toBeDefined();
+    expect(['forward', 'reverse']).toContain(result.detectedTrackOrder);
+  });
+});
+
+describe('matchSeasonBatch with DVDCompare disc ranges', () => {
+  // Helper to create TNG-style file paths
+  function makeTngFile(
+    season: number,
+    disc: number,
+    track: number,
+    durationSeconds: number,
+  ): ClassifiedFile {
+    const name = `Star Trek- The Next Generation Season ${season} Disc ${disc}_t${String(track).padStart(2, '0')}.mkv`;
+    const dir = `Star Trek- The Next Generation Season ${season} Disc ${disc}`;
+    return {
+      file: {
+        filePath: `/shows/${dir}/${name}`,
+        fileName: name,
+        extension: '.mkv',
+        sizeBytes: 7_000_000_000,
+      },
+      probeData: { durationMinutes: durationSeconds / 60, durationSeconds },
+      classification: 'episode',
+      durationMinutes: durationSeconds / 60,
+      sortOrder: disc * 1000 + track,
+    };
+  }
+
+  // TNG S2 TMDb episodes (all 46min)
+  function makeTngS2TmdbEpisodes(): TmdbEpisode[] {
+    const names = [
+      'The Child', 'Where Silence Has Lease', 'Elementary, Dear Data',
+      'The Outrageous Okona', 'Loud as a Whisper', 'The Schizoid Man',
+      'Unnatural Selection', 'A Matter of Honor', 'The Measure of a Man',
+      'The Dauphin', 'Contagion', 'The Royale', 'Time Squared',
+      'The Icarus Factor', 'Pen Pals', 'Q Who', 'Samaritan Snare',
+      'Up the Long Ladder', 'Manhunt', 'The Emissary',
+      'Peak Performance', 'Shades of Gray',
+    ];
+    return names.map((name, i) => ({
+      ...makeTmdbEpisode(i + 1, name, 46),
+      season_number: 2,
+    }));
+  }
+
+  // TNG S2 DVDCompare data: D1:5, D2:4, D3:5, D4:5, D5:3
+  function makeTngS2DvdCompare() {
+    return [
+      {
+        discNumber: 1, discLabel: 'DISC ONE',
+        episodes: [
+          { title: 'The Child', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Where Silence Has Lease', runtimeSeconds: 2744, runtimeFormatted: '45:44' },
+          { title: 'Elementary, Dear Data', runtimeSeconds: 2739, runtimeFormatted: '45:39' },
+          { title: 'The Outrageous Okona', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Loud as a Whisper', runtimeSeconds: 2724, runtimeFormatted: '45:24' },
+        ],
+      },
+      {
+        discNumber: 2, discLabel: 'DISC TWO',
+        episodes: [
+          { title: 'The Schizoid Man', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Unnatural Selection', runtimeSeconds: 2714, runtimeFormatted: '45:14' },
+          { title: 'A Matter of Honor', runtimeSeconds: 2728, runtimeFormatted: '45:28' },
+          { title: 'The Measure of a Man', runtimeSeconds: 2734, runtimeFormatted: '45:34' },
+        ],
+      },
+      {
+        discNumber: 3, discLabel: 'DISC THREE',
+        episodes: [
+          { title: 'The Dauphin', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'Contagion', runtimeSeconds: 2732, runtimeFormatted: '45:32' },
+          { title: 'The Royale', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Time Squared', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'The Icarus Factor', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+        ],
+      },
+      {
+        discNumber: 4, discLabel: 'DISC FOUR',
+        episodes: [
+          { title: 'Pen Pals', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Q Who?', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+          { title: 'Samaritan Snare', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'Up the Long Ladder', runtimeSeconds: 2726, runtimeFormatted: '45:26' },
+          { title: 'Manhunt', runtimeSeconds: 2725, runtimeFormatted: '45:25' },
+        ],
+      },
+      {
+        discNumber: 5, discLabel: 'DISC FIVE',
+        episodes: [
+          { title: 'The Emissary', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Peak Performance', runtimeSeconds: 2730, runtimeFormatted: '45:30' },
+          { title: 'Shades of Gray', runtimeSeconds: 2729, runtimeFormatted: '45:29' },
+        ],
+      },
+    ];
+  }
+
+  it('should use DVDCompare episode counts for disc ranges when disc has extra files', async () => {
+    // TNG S2 Disc 2 has 4 episodes on DVDCompare but 5 physical files
+    // (4 regular episodes + 1 extended version of "The Measure of a Man").
+    // Without DVDCompare disc ranges, Disc 2 gets 5 episode slots, stealing
+    // one from Disc 3 and cascading all subsequent disc ranges.
+    // With DVDCompare disc ranges, Disc 2 gets 4 slots (correct).
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(2, makeSeasonDetails(2, makeTngS2TmdbEpisodes()));
+    const client = makeSeasonMockClient(seasonMap);
+    const dvdCompareDiscs = makeTngS2DvdCompare();
+
+    // Disc 2 files: 4 regular eps (~47min) + 1 extended version (~57min)
+    // All discs reverse chronological, same as user's actual rips.
+    const episodeFiles: ClassifiedFile[] = [
+      // Disc 1 — E01-E05 reversed
+      makeTngFile(2, 1, 8, 2852),
+      makeTngFile(2, 1, 9, 2859),
+      makeTngFile(2, 1, 10, 2868),
+      makeTngFile(2, 1, 11, 2873),
+      makeTngFile(2, 1, 12, 2860),
+      // Disc 2 — 4 regular episodes + 1 extended version (57:35 = 3455s)
+      makeTngFile(2, 2, 5, 3455),  // Extended version (~57min) — NOT a regular ep
+      makeTngFile(2, 2, 6, 2862),  // E09 The Measure of a Man
+      makeTngFile(2, 2, 7, 2856),  // E08 A Matter of Honor
+      makeTngFile(2, 2, 8, 2842),  // E07 Unnatural Selection
+      makeTngFile(2, 2, 9, 2857),  // E06 The Schizoid Man
+      // Disc 3 — E10-E14 reversed
+      makeTngFile(2, 3, 5, 2858),
+      makeTngFile(2, 3, 6, 2858),
+      makeTngFile(2, 3, 7, 2857),
+      makeTngFile(2, 3, 8, 2860),
+      makeTngFile(2, 3, 9, 2858),
+      // Disc 4 — E15-E19 reversed
+      makeTngFile(2, 4, 5, 2853),
+      makeTngFile(2, 4, 6, 2854),
+      makeTngFile(2, 4, 7, 2858),
+      makeTngFile(2, 4, 8, 2857),
+      makeTngFile(2, 4, 9, 2857),
+      // Disc 5 — E20-E22 reversed
+      makeTngFile(2, 5, 5, 2857),
+      makeTngFile(2, 5, 6, 2858),
+      makeTngFile(2, 5, 7, 2859),
+    ];
+
+    const result = await matchSeasonBatch(
+      client, 655, 'Star Trek: The Next Generation', 1987,
+      2, episodeFiles, undefined, dvdCompareDiscs, 'reverse',
+    );
+
+    // 22 matched episodes + 1 extended version reclassified as extra
+    expect(result.matched).toHaveLength(22);
+    expect(result.reclassifiedExtras).toHaveLength(1);
+
+    // The extended version (t05 on disc 2, ~57min) should be the extra
+    const extraFile = result.reclassifiedExtras[0];
+    expect(extraFile.file.fileName).toContain('_t05.mkv');
+    expect(extraFile.file.filePath).toContain('Disc 2');
+
+    // Build assignment map
+    const assignments = new Map<string, number>();
+    for (const m of result.matched) {
+      const discMatch = m.mediaFile.filePath.match(/Disc (\d+)/);
+      const trackMatch = m.mediaFile.fileName.match(/_t(\d+)\./);
+      const key = `D${discMatch?.[1]}_t${trackMatch?.[1]}`;
+      assignments.set(key, m.tmdbMatch?.episodeNumber ?? -1);
+    }
+
+    // Disc 2: 4 files matched (not 5), extended version excluded
+    // t09→E06, t08→E07, t07→E08, t06→E09 (reversed)
+    expect(assignments.get('D2_t09')).toBe(6);   // The Schizoid Man
+    expect(assignments.get('D2_t08')).toBe(7);   // Unnatural Selection
+    expect(assignments.get('D2_t07')).toBe(8);   // A Matter of Honor
+    expect(assignments.get('D2_t06')).toBe(9);   // The Measure of a Man
+    expect(assignments.has('D2_t05')).toBe(false); // Extended version — not matched
+
+    // Disc 3: range should be 9-13 (not shifted to 10-14)
+    // t09→E10, t08→E11, t07→E12, t06→E13, t05→E14 (reversed)
+    expect(assignments.get('D3_t09')).toBe(10);  // The Dauphin
+    expect(assignments.get('D3_t08')).toBe(11);  // Contagion
+    expect(assignments.get('D3_t07')).toBe(12);  // The Royale
+    expect(assignments.get('D3_t06')).toBe(13);  // Time Squared
+    expect(assignments.get('D3_t05')).toBe(14);  // The Icarus Factor
+  });
+
+  it('should produce sequential episode ordering within each disc', async () => {
+    // Even with nearly identical runtimes across all episodes, the episode
+    // assignments within each disc must be monotonically increasing (after
+    // track reversal). This verifies the sequential ordering enforcement.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(2, makeSeasonDetails(2, makeTngS2TmdbEpisodes()));
+    const client = makeSeasonMockClient(seasonMap);
+    const dvdCompareDiscs = makeTngS2DvdCompare();
+
+    // Standard 22-file setup (no extended versions)
+    const episodeFiles: ClassifiedFile[] = [
+      makeTngFile(2, 1, 8, 2852), makeTngFile(2, 1, 9, 2859),
+      makeTngFile(2, 1, 10, 2868), makeTngFile(2, 1, 11, 2873),
+      makeTngFile(2, 1, 12, 2860),
+      makeTngFile(2, 2, 5, 2862), makeTngFile(2, 2, 6, 2856),
+      makeTngFile(2, 2, 7, 2842), makeTngFile(2, 2, 8, 2857),
+      makeTngFile(2, 3, 5, 2858), makeTngFile(2, 3, 6, 2858),
+      makeTngFile(2, 3, 7, 2857), makeTngFile(2, 3, 8, 2860),
+      makeTngFile(2, 3, 9, 2858),
+      makeTngFile(2, 4, 5, 2853), makeTngFile(2, 4, 6, 2854),
+      makeTngFile(2, 4, 7, 2858), makeTngFile(2, 4, 8, 2857),
+      makeTngFile(2, 4, 9, 2857),
+      makeTngFile(2, 5, 5, 2857), makeTngFile(2, 5, 6, 2858),
+      makeTngFile(2, 5, 7, 2859),
+    ];
+
+    const result = await matchSeasonBatch(
+      client, 655, 'Star Trek: The Next Generation', 1987,
+      2, episodeFiles, undefined, dvdCompareDiscs, 'reverse',
+    );
+
+    expect(result.matched).toHaveLength(22);
+
+    // Group assignments by disc, sorted by track number within each disc.
+    // The matched array is in greedy-cost order, not file order, so we
+    // must sort by track to verify sequential episode ordering.
+    const discAssignments = new Map<number, Array<{ track: number; epNum: number }>>();
+    for (const m of result.matched) {
+      const discMatch = m.mediaFile.filePath.match(/Disc (\d+)/);
+      if (!discMatch) continue;
+      const disc = parseInt(discMatch[1], 10);
+      const trackMatch = m.mediaFile.fileName.match(/_t(\d+)\./);
+      const track = parseInt(trackMatch?.[1] ?? '0', 10);
+      const epNum = m.tmdbMatch?.episodeNumber ?? 0;
+      const list = discAssignments.get(disc) ?? [];
+      list.push({ track, epNum });
+      discAssignments.set(disc, list);
+    }
+
+    // For each disc, when sorted by track (reversed → highest track first),
+    // episode numbers should be monotonically increasing.
+    for (const [disc, assignments] of discAssignments) {
+      // Tracks are reversed: highest track = first episode in reversed order
+      assignments.sort((a, b) => b.track - a.track);
+      const epNums = assignments.map(a => a.epNum);
+      for (let i = 1; i < epNums.length; i++) {
+        expect(epNums[i]).toBeGreaterThan(epNums[i - 1]);
+      }
+    }
+  });
+
+  it('should fall back to file counts for disc ranges without DVDCompare', async () => {
+    // When no DVDCompare data is available, disc ranges use file counts.
+    // This test verifies the fallback behavior still works correctly.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Episode 1', 45), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Episode 2', 44), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'Episode 3', 46), season_number: 1 },
+      { ...makeTmdbEpisode(4, 'Episode 4', 43), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 1, 45),
+      makeEpisodeFile(1, 2, 44),
+      makeEpisodeFile(2, 1, 46),
+      makeEpisodeFile(2, 2, 43),
+    ];
+
+    // No DVDCompare data — should use file counts (2 per disc)
+    const result = await matchSeasonBatch(
+      client, 12345, 'TestShow', 2020, 1, files,
+    );
+
+    expect(result.matched).toHaveLength(4);
+
+    // Disc 1 files → E1, E2; Disc 2 files → E3, E4
+    const d1Eps = result.matched
+      .filter(m => m.mediaFile.filePath.includes('S1D1'))
+      .map(m => m.tmdbMatch?.episodeNumber)
+      .sort();
+    const d2Eps = result.matched
+      .filter(m => m.mediaFile.filePath.includes('S1D2'))
+      .map(m => m.tmdbMatch?.episodeNumber)
+      .sort();
+
+    expect(d1Eps).toEqual([1, 2]);
+    expect(d2Eps).toEqual([3, 4]);
+  });
+
+  it('should detect reverse track order from DVDCompare correlation without a hint (real TNG S2 data)', async () => {
+    // REAL-WORLD REPRODUCTION: TNG S2 has 22 episodes, all 46 min on TMDb
+    // (except E7 at 45 min). DVDCompare runtimes range from 45:14 to 45:44.
+    // File runtimes are ~2 min longer (47:12-47:53) with a constant Blu-ray
+    // overhead. Without a hint, absolute forward vs reverse costs are IDENTICAL
+    // because the overhead is constant. The system must use runtime correlation
+    // (pattern of small sub-second variations) to detect reverse order.
+    //
+    // This test reproduces the real failure: S2 scanned without S1, no hint
+    // available, and the system incorrectly defaulted to forward order.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    const tmdbEpisodes = makeTngS2TmdbEpisodes();
+    // Fix E7 to match real TMDb data (45 min, not 46)
+    tmdbEpisodes[6] = { ...tmdbEpisodes[6], runtime: 45 };
+    seasonMap.set(2, makeSeasonDetails(2, tmdbEpisodes));
+    const client = makeSeasonMockClient(seasonMap);
+    const dvdCompareDiscs = makeTngS2DvdCompare();
+
+    // All 22 files across 5 discs in REVERSE chronological order.
+    // These are exact real-world file durations from the user's Blu-ray rips.
+    const episodeFiles: ClassifiedFile[] = [
+      // Disc 1 — E01-E05 reversed (t12=E01, t08=E05)
+      makeTngFile(2, 1, 8, 2852),   // 47:32 — actually E05
+      makeTngFile(2, 1, 9, 2859),   // 47:39 — actually E04
+      makeTngFile(2, 1, 10, 2868),  // 47:48 — actually E03
+      makeTngFile(2, 1, 11, 2873),  // 47:53 — actually E02
+      makeTngFile(2, 1, 12, 2860),  // 47:40 — actually E01
+      // Disc 2 — E06-E09 reversed (t08=E06, t05=E09)
+      makeTngFile(2, 2, 5, 2862),   // 47:42 — actually E09
+      makeTngFile(2, 2, 6, 2856),   // 47:36 — actually E08
+      makeTngFile(2, 2, 7, 2842),   // 47:22 — actually E07
+      makeTngFile(2, 2, 8, 2857),   // 47:37 — actually E06
+      // Disc 3 — E10-E14 reversed
+      makeTngFile(2, 3, 5, 2858),   // actually E14
+      makeTngFile(2, 3, 6, 2858),   // actually E13
+      makeTngFile(2, 3, 7, 2857),   // actually E12
+      makeTngFile(2, 3, 8, 2860),   // actually E11
+      makeTngFile(2, 3, 9, 2858),   // actually E10
+      // Disc 4 — E15-E19 reversed
+      makeTngFile(2, 4, 5, 2853),   // actually E19
+      makeTngFile(2, 4, 6, 2854),   // actually E18
+      makeTngFile(2, 4, 7, 2858),   // actually E17
+      makeTngFile(2, 4, 8, 2857),   // actually E16
+      makeTngFile(2, 4, 9, 2857),   // actually E15
+      // Disc 5 — E20-E22 reversed
+      makeTngFile(2, 5, 5, 2857),   // actually E22
+      makeTngFile(2, 5, 6, 2858),   // actually E21
+      makeTngFile(2, 5, 7, 2859),   // actually E20
+    ];
+
+    // NO HINT — simulates scanning S2 without S1 data
+    const result = await matchSeasonBatch(
+      client, 655, 'Star Trek: The Next Generation', 1987,
+      2, episodeFiles, undefined, dvdCompareDiscs,
+      // no trackOrderHint
+    );
+
+    expect(result.matched).toHaveLength(22);
+    expect(result.detectedTrackOrder).toBe('reverse');
+
+    // Build assignment map: "D{disc}_t{track}" → episode number
+    const assignments = new Map<string, number>();
+    for (const m of result.matched) {
+      const discMatch = m.mediaFile.filePath.match(/Disc (\d+)/);
+      const trackMatch = m.mediaFile.fileName.match(/_t(\d+)\./);
+      const key = `D${discMatch?.[1]}_t${trackMatch?.[1]}`;
+      assignments.set(key, m.tmdbMatch?.episodeNumber ?? -1);
+    }
+
+    // Disc 1 reversed: t12→E01, t11→E02, t10→E03, t09→E04, t08→E05
+    expect(assignments.get('D1_t12')).toBe(1);
+    expect(assignments.get('D1_t11')).toBe(2);
+    expect(assignments.get('D1_t10')).toBe(3);
+    expect(assignments.get('D1_t09')).toBe(4);
+    expect(assignments.get('D1_t08')).toBe(5);
+
+    // Disc 2 reversed: t08→E06, t07→E07, t06→E08, t05→E09
+    expect(assignments.get('D2_t08')).toBe(6);
+    expect(assignments.get('D2_t07')).toBe(7);
+    expect(assignments.get('D2_t06')).toBe(8);
+    expect(assignments.get('D2_t05')).toBe(9);
+
+    // Disc 5 reversed: t07→E20, t06→E21, t05→E22
+    expect(assignments.get('D5_t07')).toBe(20);
+    expect(assignments.get('D5_t06')).toBe(21);
+    expect(assignments.get('D5_t05')).toBe(22);
+  });
+});
+
+describe('sequential ordering enforcement', () => {
+  it('should fix non-sequential episode ordering within a disc', async () => {
+    // Create a scenario where greedy matching could produce non-sequential
+    // ordering: all episodes have nearly identical TMDb runtimes but
+    // slightly different DVDCompare runtimes that could trick the matcher.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Ep A', 45), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Ep B', 45), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'Ep C', 45), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // 3 files on disc 1 with runtimes all within 1 second of each other
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 1, 45.0),   // Should map to E1
+      makeEpisodeFile(1, 2, 45.01),  // Should map to E2
+      makeEpisodeFile(1, 3, 45.02),  // Should map to E3
+    ];
+
+    const result = await matchSeasonBatch(
+      client, 12345, 'TestShow', 2020, 1, files,
+    );
+
+    expect(result.matched).toHaveLength(3);
+
+    // Sort matched by file track order
+    const sorted = [...result.matched].sort((a, b) => {
+      const aTrack = parseInt(a.mediaFile.fileName.match(/_t(\d+)/)?.[1] ?? '0', 10);
+      const bTrack = parseInt(b.mediaFile.fileName.match(/_t(\d+)/)?.[1] ?? '0', 10);
+      return aTrack - bTrack;
+    });
+
+    // Episode numbers must be monotonically increasing regardless of
+    // which candidate the greedy matcher picked first
+    const epNums = sorted.map(m => m.tmdbMatch?.episodeNumber ?? 0);
+    for (let i = 1; i < epNums.length; i++) {
+      expect(epNums[i]).toBeGreaterThan(epNums[i - 1]);
+    }
+  });
+});
+
 describe('matchSpecialsBatch', () => {
   it('should match a file to a Season 0 special by runtime', async () => {
     const season0 = makeSeason0Details([
@@ -1597,6 +2292,35 @@ describe('detectPlayAllFiles', () => {
 });
 
 describe('detectAndApplyTrackOrder', () => {
+  // Helper: build unified refs and disc ranges for track order tests
+  function buildTestRefsAndRanges(
+    tmdbEpisodes: TmdbEpisode[],
+    files: ClassifiedFile[],
+  ): { refs: UnifiedEpisodeRef[]; ranges: Map<number, { startEp: number; endEp: number }> } {
+    const refs = buildUnifiedEpisodeRefs(tmdbEpisodes);
+    const discFileCounts = new Map<number, number>();
+    for (const file of files) {
+      // Match S#D# pattern (e.g., S1D1, S1D2) used by makeEpisodeFile
+      const sdMatch = file.file.filePath.match(/S\d{1,2}D(\d{1,2})/i);
+      // Also match "Disc N" pattern
+      const discMatch = file.file.filePath.match(/(?:Disc|Disk)\s*(\d{1,2})/i);
+      const disc = sdMatch ? parseInt(sdMatch[1], 10) : (discMatch ? parseInt(discMatch[1], 10) : 0);
+      discFileCounts.set(disc, (discFileCounts.get(disc) ?? 0) + 1);
+    }
+    const ranges = new Map<number, { startEp: number; endEp: number }>();
+    const sortedDiscs = [...discFileCounts.entries()].sort((a, b) => a[0] - b[0]);
+    let cursor = 0;
+    for (let i = 0; i < sortedDiscs.length; i++) {
+      const [disc, count] = sortedDiscs[i];
+      const isLast = i === sortedDiscs.length - 1;
+      const startEp = cursor;
+      const endEp = isLast ? tmdbEpisodes.length - 1 : Math.min(cursor + count - 1, tmdbEpisodes.length - 1);
+      if (startEp < tmdbEpisodes.length) ranges.set(disc, { startEp, endEp });
+      cursor += count;
+    }
+    return { refs, ranges };
+  }
+
   it('should reverse tracks on discs where reverse order fits TMDb episodes better', () => {
     // John Adams Discs 1 & 2 have tracks in reverse episode order
     // TMDb runtimes based on actual API data for John Adams (2008).
@@ -1623,22 +2347,27 @@ describe('detectAndApplyTrackOrder', () => {
     // Capture original filenames by position
     const originalOrder = files.map(f => f.file.fileName);
 
-    detectAndApplyTrackOrder(files, tmdbEpisodes);
+    const { refs, ranges } = buildTestRefsAndRanges(tmdbEpisodes, files);
+    detectAndApplyTrackOrder(files, refs, ranges);
 
     const newOrder = files.map(f => f.file.fileName);
 
-    // Disc 1 should be reversed: [t02, t01] instead of [t01, t02]
+    // Global decision is reverse (D1+D2 strongly favor reverse, overwhelming D3).
+    // All discs are reversed since the decision is global — a physical release
+    // is mastered one way.
+
+    // Disc 1 reversed: [t02, t01] instead of [t01, t02]
     expect(newOrder[0]).toBe(originalOrder[1]); // D1_t02 now first
     expect(newOrder[1]).toBe(originalOrder[0]); // D1_t01 now second
 
-    // Disc 2 should be reversed: [t03, t02, t01] instead of [t01, t02, t03]
+    // Disc 2 reversed: [t03, t02, t01] instead of [t01, t02, t03]
     expect(newOrder[2]).toBe(originalOrder[4]); // D2_t03 now first
     expect(newOrder[3]).toBe(originalOrder[3]); // D2_t02 stays middle
     expect(newOrder[4]).toBe(originalOrder[2]); // D2_t01 now last
 
-    // Disc 3 should NOT be reversed (forward is already better)
-    expect(newOrder[5]).toBe(originalOrder[5]); // D3_t03 stays
-    expect(newOrder[6]).toBe(originalOrder[6]); // D3_t04 stays
+    // Disc 3 also reversed (global decision from D1+D2 signal)
+    expect(newOrder[5]).toBe(originalOrder[6]); // D3_t04 now first
+    expect(newOrder[6]).toBe(originalOrder[5]); // D3_t03 now second
   });
 
   it('should not reverse tracks when forward order already matches well', () => {
@@ -1662,11 +2391,161 @@ describe('detectAndApplyTrackOrder', () => {
     ];
 
     const originalOrder = files.map(f => f.file.fileName);
-    detectAndApplyTrackOrder(files, tmdbEpisodes);
+    const { refs, ranges } = buildTestRefsAndRanges(tmdbEpisodes, files);
+    detectAndApplyTrackOrder(files, refs, ranges);
     const newOrder = files.map(f => f.file.fileName);
 
     // Nothing should change — forward order already matches perfectly
     expect(newOrder).toEqual(originalOrder);
+  });
+
+  it('should follow reverse hint when runtimes are near-uniform (TNG S2 Disc 1)', () => {
+    // TNG S2 Disc 1: all DVDCompare runtimes within 20s of each other (45:24-45:44).
+    // File runtimes all ~2min longer than DVDCompare. Forward vs reverse cost is
+    // nearly identical (~10.7min each), so runtime-based detection alone cannot
+    // distinguish. The reverse hint from Season 1 must be followed.
+    //
+    // DVDCompare Disc 1 order: The Child (2731s), Where Silence (2744s),
+    //   Elementary Dear Data (2739s), Outrageous Okona (2731s), Loud as a Whisper (2724s)
+    // TMDb: all 46 min
+    // Files: t08(2852s)..t12(2860s) — reverse chronological (t12=E01..t08=E05)
+    const tmdbEpisodes: TmdbEpisode[] = [
+      { ...makeTmdbEpisode(1, 'The Child', 46), season_number: 2 },
+      { ...makeTmdbEpisode(2, 'Where Silence Has Lease', 46), season_number: 2 },
+      { ...makeTmdbEpisode(3, 'Elementary, Dear Data', 46), season_number: 2 },
+      { ...makeTmdbEpisode(4, 'The Outrageous Okona', 46), season_number: 2 },
+      { ...makeTmdbEpisode(5, 'Loud as a Whisper', 46), season_number: 2 },
+    ];
+
+    const dvdCompareDiscs = [
+      {
+        discNumber: 1,
+        discLabel: 'DISC ONE',
+        episodes: [
+          { title: 'The Child', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Where Silence Has Lease', runtimeSeconds: 2744, runtimeFormatted: '45:44' },
+          { title: 'Elementary, Dear Data', runtimeSeconds: 2739, runtimeFormatted: '45:39' },
+          { title: 'The Outrageous Okona', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Loud as a Whisper', runtimeSeconds: 2724, runtimeFormatted: '45:24' },
+        ],
+      },
+    ];
+
+    // Files on Disc 1 — reverse-chronological on the Blu-ray
+    // t12 is actually E01 (The Child), t08 is E05 (Loud as a Whisper)
+    const makeTngDiscFile = (disc: number, track: number, durationSec: number): ClassifiedFile => {
+      const name = `Star Trek- The Next Generation Season 2 Disc ${disc}_t${String(track).padStart(2, '0')}.mkv`;
+      const dir = `Star Trek- The Next Generation Season 2 Disc ${disc}`;
+      return {
+        file: {
+          filePath: `/shows/${dir}/${name}`,
+          fileName: name,
+          extension: '.mkv',
+          sizeBytes: 7_000_000_000,
+        },
+        probeData: { durationMinutes: durationSec / 60, durationSeconds: durationSec },
+        classification: 'episode',
+        durationMinutes: durationSec / 60,
+        sortOrder: disc * 1000 + track,
+      };
+    };
+
+    const files: ClassifiedFile[] = [
+      makeTngDiscFile(1, 8, 2852),   // t08 → E05 Loud as a Whisper
+      makeTngDiscFile(1, 9, 2859),   // t09 → E04 The Outrageous Okona
+      makeTngDiscFile(1, 10, 2868),  // t10 → E03 Elementary, Dear Data
+      makeTngDiscFile(1, 11, 2873),  // t11 → E02 Where Silence Has Lease
+      makeTngDiscFile(1, 12, 2860),  // t12 → E01 The Child
+    ];
+
+    const originalOrder = files.map(f => f.file.fileName);
+    const refs = buildUnifiedEpisodeRefs(tmdbEpisodes, dvdCompareDiscs);
+    const ranges = new Map<number, { startEp: number; endEp: number }>();
+    ranges.set(1, { startEp: 0, endEp: 4 });
+
+    // With reverse hint from Season 1 — should follow it
+    const decision = detectAndApplyTrackOrder(files, refs, ranges, 'reverse');
+    const newOrder = files.map(f => f.file.fileName);
+
+    expect(decision).toBe('reverse');
+    // Files should be reversed: t12, t11, t10, t09, t08
+    expect(newOrder[0]).toBe(originalOrder[4]); // t12 now first
+    expect(newOrder[1]).toBe(originalOrder[3]); // t11
+    expect(newOrder[2]).toBe(originalOrder[2]); // t10
+    expect(newOrder[3]).toBe(originalOrder[1]); // t09
+    expect(newOrder[4]).toBe(originalOrder[0]); // t08 now last
+  });
+
+  it('should detect reverse via correlation when runtimes are near-uniform with no hint', () => {
+    // TNG S2 Disc 1 data without a hint. Absolute costs are identical
+    // (constant ~128s Blu-ray overhead), but DVDCompare sub-second runtime
+    // correlation reveals the correct reverse ordering. The runtime variation
+    // patterns (slight differences in episode lengths) align much better
+    // when files are reversed.
+    const tmdbEpisodes: TmdbEpisode[] = [
+      { ...makeTmdbEpisode(1, 'The Child', 46), season_number: 2 },
+      { ...makeTmdbEpisode(2, 'Where Silence Has Lease', 46), season_number: 2 },
+      { ...makeTmdbEpisode(3, 'Elementary, Dear Data', 46), season_number: 2 },
+      { ...makeTmdbEpisode(4, 'The Outrageous Okona', 46), season_number: 2 },
+      { ...makeTmdbEpisode(5, 'Loud as a Whisper', 46), season_number: 2 },
+    ];
+
+    const dvdCompareDiscs = [
+      {
+        discNumber: 1,
+        discLabel: 'DISC ONE',
+        episodes: [
+          { title: 'The Child', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Where Silence Has Lease', runtimeSeconds: 2744, runtimeFormatted: '45:44' },
+          { title: 'Elementary, Dear Data', runtimeSeconds: 2739, runtimeFormatted: '45:39' },
+          { title: 'The Outrageous Okona', runtimeSeconds: 2731, runtimeFormatted: '45:31' },
+          { title: 'Loud as a Whisper', runtimeSeconds: 2724, runtimeFormatted: '45:24' },
+        ],
+      },
+    ];
+
+    const makeTngDiscFile = (disc: number, track: number, durationSec: number): ClassifiedFile => {
+      const name = `Star Trek- The Next Generation Season 2 Disc ${disc}_t${String(track).padStart(2, '0')}.mkv`;
+      const dir = `Star Trek- The Next Generation Season 2 Disc ${disc}`;
+      return {
+        file: {
+          filePath: `/shows/${dir}/${name}`,
+          fileName: name,
+          extension: '.mkv',
+          sizeBytes: 7_000_000_000,
+        },
+        probeData: { durationMinutes: durationSec / 60, durationSeconds: durationSec },
+        classification: 'episode',
+        durationMinutes: durationSec / 60,
+        sortOrder: disc * 1000 + track,
+      };
+    };
+
+    const files: ClassifiedFile[] = [
+      makeTngDiscFile(1, 8, 2852),   // t08 → actually E05
+      makeTngDiscFile(1, 9, 2859),   // t09 → actually E04
+      makeTngDiscFile(1, 10, 2868),  // t10 → actually E03
+      makeTngDiscFile(1, 11, 2873),  // t11 → actually E02
+      makeTngDiscFile(1, 12, 2860),  // t12 → actually E01
+    ];
+
+    const originalOrder = files.map(f => f.file.fileName);
+    const refs = buildUnifiedEpisodeRefs(tmdbEpisodes, dvdCompareDiscs);
+    const ranges = new Map<number, { startEp: number; endEp: number }>();
+    ranges.set(1, { startEp: 0, endEp: 4 });
+
+    // No hint — correlation should detect reverse order from sub-second
+    // runtime variation patterns even though absolute costs are identical
+    const decision = detectAndApplyTrackOrder(files, refs, ranges);
+    const newOrder = files.map(f => f.file.fileName);
+
+    expect(decision).toBe('reverse');
+    // Files should be reversed: t12, t11, t10, t09, t08
+    expect(newOrder[0]).toBe(originalOrder[4]); // t12 now first
+    expect(newOrder[1]).toBe(originalOrder[3]); // t11
+    expect(newOrder[2]).toBe(originalOrder[2]); // t10 stays middle
+    expect(newOrder[3]).toBe(originalOrder[1]); // t09
+    expect(newOrder[4]).toBe(originalOrder[0]); // t08 now last
   });
 
   it('should handle single-file discs without reversal', () => {
@@ -1681,7 +2560,8 @@ describe('detectAndApplyTrackOrder', () => {
     ];
 
     const originalOrder = files.map(f => f.file.fileName);
-    detectAndApplyTrackOrder(files, tmdbEpisodes);
+    const { refs, ranges } = buildTestRefsAndRanges(tmdbEpisodes, files);
+    detectAndApplyTrackOrder(files, refs, ranges);
     const newOrder = files.map(f => f.file.fileName);
 
     // Single-file discs can't be reversed

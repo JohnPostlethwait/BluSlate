@@ -254,6 +254,7 @@ async function runBatchPipeline(
   const showCache = new Map<string, IdentifiedShow | null>();
   const season0Cache = new Map<number, TmdbSeasonDetails | null>();
   const dvdCompareCache = new Map<string, DvdCompareDisc[] | null>();
+  const trackOrderCache = new Map<string, 'forward' | 'reverse'>();
   const specialsCandidates = new Map<string, { show: IdentifiedShow; candidates: ClassifiedFile[] }>();
   const allPlayAllFiles = new Set<string>();
 
@@ -365,7 +366,16 @@ async function runBatchPipeline(
   ui.progress.succeed(`Probed ${totalFiles} files`);
 
   // ── Phase 5: Classify + Match per season group ──
-  for (const [groupKey, group] of seasonGroups) {
+  // Sort season groups by season number so earlier seasons are processed
+  // first. This is important for cross-season track order propagation:
+  // the detected track order from Season 1 becomes the hint for Season 2.
+  const sortedSeasonEntries = [...seasonGroups.entries()].sort((a, b) => {
+    const seasonA = a[1].directoryContext.season ?? 1;
+    const seasonB = b[1].directoryContext.season ?? 1;
+    return seasonA - seasonB;
+  });
+
+  for (const [groupKey, group] of sortedSeasonEntries) {
     const showName = group.directoryContext.showName;
     const season = group.directoryContext.season ?? 1;
 
@@ -430,7 +440,10 @@ async function runBatchPipeline(
       }
 
       // Match episodes to TMDb season (pass DVDCompare data when available)
+      // Track order hint propagates the detected disc ordering from earlier
+      // seasons of the same show (same physical release = same mastering).
       const dvdCompareDiscs = dvdCompareCache.get(showName) ?? null;
+      const trackOrderHint = trackOrderCache.get(showName);
       ui.progress.start(`Matching ${episodeFiles.length} episodes for ${showName} Season ${season}...`);
       const seasonResult = await matchSeasonBatch(
         client,
@@ -441,7 +454,11 @@ async function runBatchPipeline(
         episodeFiles,
         config.template,
         dvdCompareDiscs ?? undefined,
+        trackOrderHint,
       );
+      if (seasonResult.detectedTrackOrder) {
+        trackOrderCache.set(showName, seasonResult.detectedTrackOrder);
+      }
       ui.progress.succeed(`Matched ${seasonResult.matched.filter(m => m.status === 'matched').length} episode(s)`);
 
       // Mark all batch results with dvdCompareUsed so the UI always shows the

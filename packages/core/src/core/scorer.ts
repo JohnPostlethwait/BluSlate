@@ -117,7 +117,8 @@ export interface BatchConfidenceBreakdown {
 }
 
 export type BatchConfidenceParams = {
-  sequentialPositionMatch: boolean;
+  /** Normalized positional difference (0.0 = exact match, 1.0 = opposite ends of season) */
+  positionalDiff: number;
   runtimeDiffMinutes: number | undefined;
   isSpecialsMatch?: boolean;
   tmdbRuntimeMinutes?: number;
@@ -133,7 +134,7 @@ export type BatchConfidenceParams = {
  * score and a line-item breakdown of each scoring factor.
  *
  * Scoring components (max 100, always):
- *   - Sequential position match: +40
+ *   - Position match: 0–40 (graduated, linearly decreasing with positional diff)
  *   - Runtime match: 0–60
  *       When DVDCompare data available: -1 point per second of drift
  *       When no DVDCompare: continuous per-minute deduction (regular) or
@@ -149,12 +150,15 @@ export function computeBatchConfidenceBreakdown(params: BatchConfidenceParams): 
   const positionPoints = CONFIDENCE_POSITION_POINTS;
   const runtimeMaxPoints = CONFIDENCE_RUNTIME_MAX_POINTS;
 
-  // Sequential position match (+40)
-  if (params.sequentialPositionMatch) {
-    score += positionPoints;
-    items.push({ label: 'Sequential position match', points: positionPoints, maxPoints: positionPoints });
+  // Position match (0–40, graduated)
+  // Full 40 points at positionalDiff=0, linearly decreasing to 0 at positionalDiff=1.
+  const posScore = Math.round(positionPoints * Math.max(0, 1 - params.positionalDiff));
+  if (posScore > 0) {
+    score += posScore;
+    const pctOff = Math.round(params.positionalDiff * 100);
+    items.push({ label: `Position match (${pctOff}% off)`, points: posScore, maxPoints: positionPoints });
   } else {
-    items.push({ label: 'No sequential position match', points: 0, maxPoints: positionPoints });
+    items.push({ label: 'No position match', points: 0, maxPoints: positionPoints });
   }
 
   // Runtime match (0–60)

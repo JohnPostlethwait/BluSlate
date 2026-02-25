@@ -10,7 +10,6 @@ import {
   EPISODE_MIN_DURATION_MINUTES,
   MULTI_EPISODE_RUNTIME_MULTIPLIER,
   MULTI_EPISODE_COMBINED_TOLERANCE_MIN,
-  DVDCOMPARE_RUNTIME_TOLERANCE_SEC,
   DVDCOMPARE_TITLE_SIMILARITY_MIN,
   SPECIALS_MAX_DIFF_MINUTES,
   SPECIALS_MAX_DIFF_PERCENT,
@@ -42,6 +41,7 @@ export interface IdentifiedShow {
 export interface SeasonBatchResult {
   matched: MatchResult[];
   reclassifiedExtras: ClassifiedFile[];
+  detectedTrackOrder?: 'forward' | 'reverse';
 }
 
 /**
@@ -188,17 +188,73 @@ function findTmdbEpisodeByTitle(
   return null;
 }
 
+// ── Unified Episode Reference ─────────────────────────────────────────
+// Merges TMDb and DVDCompare data into one reference per episode, built
+// once before any matching. DVDCompare data augments but never replaces.
+
+export interface UnifiedEpisodeRef {
+  tmdbIdx: number;                    // Index into tmdbEpisodes array
+  tmdbEpisode: TmdbEpisode;          // TMDb episode data
+  tmdbRuntimeMinutes: number | null;  // TMDb runtime in minutes
+  dvdCompareTitle?: string;           // DVDCompare title (if matched)
+  dvdCompareRuntimeSeconds?: number;  // DVDCompare sub-second runtime
+  dvdCompareDiscNumber?: number;      // Which DVDCompare disc this ep is on
+}
+
 /**
- * Match episode files to TMDb season episodes using set-based optimal assignment.
+ * Build a unified episode reference table that merges TMDb episodes with
+ * DVDCompare data by title similarity. One ref per TMDb episode.
+ */
+export function buildUnifiedEpisodeRefs(
+  tmdbEpisodes: TmdbEpisode[],
+  dvdCompareDiscs?: DvdCompareDisc[],
+): UnifiedEpisodeRef[] {
+  // Start with one ref per TMDb episode (DVDCompare fields undefined)
+  const refs: UnifiedEpisodeRef[] = tmdbEpisodes.map((ep, idx) => ({
+    tmdbIdx: idx,
+    tmdbEpisode: ep,
+    tmdbRuntimeMinutes: ep.runtime,
+  }));
+
+  if (!dvdCompareDiscs || dvdCompareDiscs.length === 0) return refs;
+
+  // Flatten DVDCompare episodes in disc order
+  const dvdFlat: Array<{ title: string; runtimeSeconds: number; discNumber: number }> = [];
+  for (const disc of [...dvdCompareDiscs].sort((a, b) => a.discNumber - b.discNumber)) {
+    for (const ep of disc.episodes) {
+      dvdFlat.push({ title: ep.title, runtimeSeconds: ep.runtimeSeconds, discNumber: disc.discNumber });
+    }
+  }
+
+  // Map each DVDCompare episode to its best TMDb match by title
+  const usedTmdbIndices = new Set<number>();
+  for (const dvdEp of dvdFlat) {
+    const result = findTmdbEpisodeByTitle(tmdbEpisodes, dvdEp.title, usedTmdbIndices);
+    if (result) {
+      const ref = refs[result.idx];
+      ref.dvdCompareTitle = dvdEp.title;
+      ref.dvdCompareRuntimeSeconds = dvdEp.runtimeSeconds;
+      ref.dvdCompareDiscNumber = dvdEp.discNumber;
+      usedTmdbIndices.add(result.idx);
+    }
+  }
+
+  const enrichedCount = refs.filter((r) => r.dvdCompareRuntimeSeconds !== undefined).length;
+  if (enrichedCount > 0) {
+    logger.batch(`Unified refs: ${enrichedCount}/${refs.length} episodes have DVDCompare data`);
+  }
+
+  return refs;
+}
+
+/**
+ * Match episode files to TMDb season episodes using a unified set-based
+ * assignment with combined TMDb + DVDCompare data.
  *
- * When DVDCompare disc data is provided, a high-precision first pass uses
- * to-the-second runtime matching for definitive episode identification.
- * Files not matched by DVDCompare fall through to the set-based approach.
- *
- * Without DVDCompare data, evaluates ALL possible file→episode pairings using a
- * cost function that considers both runtime proximity and positional proximity.
- * Assignments are made greedily from lowest cost to highest, ensuring that
- * files from Disc 1 naturally match early episodes and Disc 6 matches late ones.
+ * DVDCompare data (when available) augments the matching cost function by
+ * providing sub-second runtime precision. It never forks or replaces the
+ * TMDb-based matching — both data sources feed into one candidate scoring
+ * system. Whichever source produces a closer runtime match wins.
  */
 export async function matchSeasonBatch(
   client: TmdbClient,
@@ -209,6 +265,7 @@ export async function matchSeasonBatch(
   episodeFiles: ClassifiedFile[],
   template?: string,
   dvdCompareDiscs?: DvdCompareDisc[],
+  trackOrderHint?: 'forward' | 'reverse',
 ): Promise<SeasonBatchResult> {
   const matched: MatchResult[] = [];
   const reclassifiedExtras: ClassifiedFile[] = [];
@@ -236,282 +293,212 @@ export async function matchSeasonBatch(
     return { matched: [], reclassifiedExtras: [...episodeFiles] };
   }
 
-  // ── Detect and fix reverse track order within discs ─────────────────
-  // MakeMKV may extract titles in reverse episode order on some discs.
-  // Compare forward vs reverse runtime cost per disc and reorder if needed.
-  detectAndApplyTrackOrder(episodeFiles, tmdbEpisodes);
+  // ── Step 1: Build unified episode reference table ───────────────────
+  const unifiedRefs = buildUnifiedEpisodeRefs(tmdbEpisodes, dvdCompareDiscs);
+
+  // ── Step 2: Compute disc episode ranges ─────────────────────────────
+  // Physical disc media contains sequential episode sets. Disc 1 holds the
+  // first N episodes, Disc 2 the next M, etc. Compute which TMDb episode
+  // indices each disc should cover based on the number of episode files per
+  // disc. This prevents cross-disc mismatches when runtimes are similar.
+  const discEpRanges = new Map<number, { startEp: number; endEp: number }>();
+
+  {
+    // When DVDCompare data is available, derive per-disc episode counts from
+    // the unified refs that ACTUALLY MATCHED this season's TMDb episodes.
+    // This avoids disc number overlap between seasons: when the user selects
+    // both S1 and S2 Blu-ray releases, both have D1-D5, but only the episodes
+    // matching this season's TMDb titles are relevant. Using raw DVDCompare
+    // disc counts would let S2's D2 (4 eps) overwrite S1's D2 (5 eps).
+    const discEpCounts = new Map<number, number>();
+
+    // Count matched DVDCompare episodes per disc from unified refs
+    const matchedDiscCounts = new Map<number, number>();
+    for (const ref of unifiedRefs) {
+      if (ref.dvdCompareDiscNumber !== undefined) {
+        matchedDiscCounts.set(
+          ref.dvdCompareDiscNumber,
+          (matchedDiscCounts.get(ref.dvdCompareDiscNumber) ?? 0) + 1,
+        );
+      }
+    }
+
+    if (matchedDiscCounts.size > 0) {
+      for (const [disc, count] of matchedDiscCounts) {
+        discEpCounts.set(disc, count);
+      }
+      logger.batch(
+        `Using DVDCompare matched episode counts for disc ranges: ` +
+        [...discEpCounts.entries()].sort((a, b) => a[0] - b[0])
+          .map(([d, c]) => `D${d}:${c}eps`).join(', '),
+      );
+    } else {
+      for (const file of episodeFiles) {
+        const disc = parseDiscFromPath(file.file.filePath) ?? 0;
+        discEpCounts.set(disc, (discEpCounts.get(disc) ?? 0) + 1);
+      }
+    }
+
+    const sortedDiscs = [...discEpCounts.entries()].sort((a, b) => a[0] - b[0]);
+    let epCursor = 0;
+    for (let di = 0; di < sortedDiscs.length; di++) {
+      const [disc, epCount] = sortedDiscs[di];
+      const isLastDisc = di === sortedDiscs.length - 1;
+      const startEp = epCursor;
+      // Last disc extends to cover all remaining episodes (handles multi-ep
+      // files that consume more TMDb episodes than there are files)
+      const endEp = isLastDisc
+        ? tmdbEpisodes.length - 1
+        : Math.min(epCursor + epCount - 1, tmdbEpisodes.length - 1);
+      if (startEp < tmdbEpisodes.length) {
+        discEpRanges.set(disc, { startEp, endEp });
+      }
+      epCursor += epCount;
+    }
+
+    if (discEpRanges.size > 1) {
+      logger.batch(
+        `Disc episode ranges: ${[...discEpRanges.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([disc, r]) => `D${disc}\u2192eps[${r.startEp}..${r.endEp}]`)
+          .join(', ')}`,
+      );
+    }
+  }
+
+  // ── Step 3: Detect and fix reverse track order (global decision) ────
+  // MakeMKV may extract titles in reverse episode order. Compare forward
+  // vs reverse runtime cost across ALL discs using unified refs (preferring
+  // DVDCompare seconds when available for sub-minute precision). The
+  // decision is global — a physical release is mastered one way.
+  // When a hint is provided from a previously-matched season, it biases
+  // the decision so that same-release seasons use the same track order.
+  const detectedTrackOrder = detectAndApplyTrackOrder(episodeFiles, unifiedRefs, discEpRanges, trackOrderHint);
 
   const assignedFiles = new Set<number>();
   const assignedEps = new Set<number>();
 
-  // ── DVDCompare first-pass: set-based sub-second runtime matching ─────
-  // When DVDCompare disc data is available, use to-the-second runtimes for
-  // definitive episode identification. Uses a set-based approach (like the
-  // TMDb matcher below) with cost = runtimeDiff + positionalDiff * WEIGHT
-  // to correctly assign episodes when multiple have similar runtimes
-  // (e.g., Venture Bros S3 where eps 3-7 are all within 22:42-22:52).
-  if (dvdCompareDiscs && dvdCompareDiscs.length > 0) {
-    logger.batch(`DVDCompare: attempting set-based matching with ${dvdCompareDiscs.length} disc(s)`);
+  // ── Step 4: Unified candidate generation & assignment ───────────────
+  // Single cost function using the best available runtime data from the
+  // unified ref (DVDCompare sub-second or TMDb minute-level).
 
-    // 1. Flatten DVDCompare episodes in disc order, preserving disc number
-    interface DvdEpisodeFlat {
-      title: string;
-      runtimeSeconds: number;
-      runtimeFormatted: string;
-      discNumber: number;
-    }
-
-    const dvdEpisodesFlat: DvdEpisodeFlat[] = [];
-    for (const disc of [...dvdCompareDiscs].sort((a, b) => a.discNumber - b.discNumber)) {
-      for (const ep of disc.episodes) {
-        dvdEpisodesFlat.push({ ...ep, discNumber: disc.discNumber });
-      }
-    }
-
-    // 2. Pre-map each DVDCompare episode to its best TMDb episode by title.
-    //    Track used TMDb indices to prevent two DVDCompare episodes from
-    //    mapping to the same TMDb episode (e.g., similarly named parts).
-    const dvdToTmdb = new Map<number, { ep: TmdbEpisode; idx: number }>();
-    const premapUsed = new Set<number>();
-
-    for (let di = 0; di < dvdEpisodesFlat.length; di++) {
-      const result = findTmdbEpisodeByTitle(tmdbEpisodes, dvdEpisodesFlat[di].title, premapUsed);
-      if (result) {
-        dvdToTmdb.set(di, result);
-        premapUsed.add(result.idx);
-      }
-    }
-
-    // 3. Build candidate pairings with cost = runtimeDiff + positionalDiff * weight
-    interface DvdCandidate {
-      fileIdx: number;
-      dvdIdx: number;
-      tmdbIdx: number;
-      cost: number;
-      runtimeDiffSeconds: number;
-    }
-
-    const dvdCandidates: DvdCandidate[] = [];
-    const maxFilePosD = Math.max(1, episodeFiles.length - 1);
-    const maxDvdPos = Math.max(1, dvdEpisodesFlat.length - 1);
-
-    // Positional weight: seconds of cost for full-season positional displacement.
-    // With 3s runtime tolerance, 5s ensures position is the decisive tiebreaker
-    // when multiple episodes have runtimes within 1-2s of each other.
-    const DVD_POSITIONAL_WEIGHT = 5;
-
-    for (let fi = 0; fi < episodeFiles.length; fi++) {
-      const file = episodeFiles[fi];
-      const durationSeconds = file.probeData?.durationSeconds;
-      if (durationSeconds === undefined) continue;
-
-      const discNumber = parseDiscFromPath(file.file.filePath);
-      const filePos = fi / maxFilePosD; // 0..1
-
-      for (let di = 0; di < dvdEpisodesFlat.length; di++) {
-        const dvdEp = dvdEpisodesFlat[di];
-
-        // Apply disc constraint: if file is from a specific disc, only match
-        // against DVDCompare episodes from that disc
-        if (discNumber !== undefined && dvdEp.discNumber !== discNumber) continue;
-
-        // Must have a TMDb mapping for this DVDCompare episode
-        const tmdbMapping = dvdToTmdb.get(di);
-        if (!tmdbMapping) continue;
-
-        const runtimeDiff = Math.abs(durationSeconds - dvdEp.runtimeSeconds);
-        if (runtimeDiff > DVDCOMPARE_RUNTIME_TOLERANCE_SEC) continue; // Beyond tolerance
-
-        const dvdPos = di / maxDvdPos; // 0..1
-        const positionalDiff = Math.abs(filePos - dvdPos);
-        const cost = runtimeDiff + positionalDiff * DVD_POSITIONAL_WEIGHT;
-
-        dvdCandidates.push({
-          fileIdx: fi,
-          dvdIdx: di,
-          tmdbIdx: tmdbMapping.idx,
-          cost,
-          runtimeDiffSeconds: runtimeDiff,
-        });
-      }
-    }
-
-    // 4. Greedy assignment from lowest cost
-    dvdCandidates.sort((a, b) => a.cost - b.cost);
-    const assignedDvdEps = new Set<number>();
-
-    for (const c of dvdCandidates) {
-      if (assignedFiles.has(c.fileIdx)) continue;
-      if (assignedEps.has(c.tmdbIdx)) continue;
-      if (assignedDvdEps.has(c.dvdIdx)) continue;
-
-      const file = episodeFiles[c.fileIdx];
-      const dvdEp = dvdEpisodesFlat[c.dvdIdx];
-      const tmdbEp = tmdbEpisodes[c.tmdbIdx];
-
-      // Check for multi-episode file (e.g., "Encounter at Farpoint" is ~91 min
-      // but TMDb may list it as two ~46 min episodes)
-      const durationSeconds = file.probeData!.durationSeconds!;
-      let isMultiEp = false;
-      let epEndNumber: number | undefined;
-      let combinedRuntime: number | undefined;
-      const singleEpRuntime = tmdbEp.runtime;
-
-      if (singleEpRuntime && (durationSeconds / 60) > singleEpRuntime * MULTI_EPISODE_RUNTIME_MULTIPLIER) {
-        const nextIdx = c.tmdbIdx + 1;
-        if (nextIdx < tmdbEpisodes.length && !assignedEps.has(nextIdx)) {
-          const nextEp = tmdbEpisodes[nextIdx];
-          if (nextEp.runtime) {
-            const combined = singleEpRuntime + nextEp.runtime;
-            if (Math.abs(durationSeconds / 60 - combined) <= MULTI_EPISODE_COMBINED_TOLERANCE_MIN) {
-              isMultiEp = true;
-              epEndNumber = nextEp.episode_number;
-              combinedRuntime = combined;
-              assignedEps.add(nextIdx);
-            }
-          }
-        }
-      }
-
-      assignedFiles.add(c.fileIdx);
-      assignedEps.add(c.tmdbIdx);
-      assignedDvdEps.add(c.dvdIdx);
-
-      const match = createBatchMatch({
-        classifiedFile: file,
-        showId,
-        showName,
-        showYear,
-        season,
-        episodeNumber: tmdbEp.episode_number,
-        episodeNumberEnd: epEndNumber,
-        episodeTitle: isMultiEp
-          ? `${tmdbEp.name} / ${tmdbEpisodes[c.tmdbIdx + 1].name}`
-          : tmdbEp.name,
-        runtime: isMultiEp ? combinedRuntime : (singleEpRuntime ?? undefined),
-        sequentialPositionMatch: true,
-        runtimeDiff: 0,
-        customTemplate: template,
-        isMultiEpisodeMatch: isMultiEp,
-        singleEpisodeRuntimeMinutes: singleEpRuntime ?? undefined,
-        seasonEpisodeCount: tmdbEpisodes.length,
-        seasonEpisodes: seasonEpisodesList,
-        isDvdCompareMatch: true,
-        dvdCompareRuntimeDiffSeconds: c.runtimeDiffSeconds,
-        dvdCompareTitle: dvdEp.title,
-        dvdCompareRuntimeSeconds: dvdEp.runtimeSeconds,
-      });
-      matched.push(match);
-
-      logger.batch(
-        `DVDCompare match: ${file.file.fileName} → ` +
-        `S${String(season).padStart(2, '0')}E${String(tmdbEp.episode_number).padStart(2, '0')}` +
-        (isMultiEp ? `-E${String(epEndNumber).padStart(2, '0')}` : '') +
-        ` "${tmdbEp.name}" ` +
-        `(via DVDCompare "${dvdEp.title}", ±${c.runtimeDiffSeconds.toFixed(1)}s, ` +
-        `cost: ${c.cost.toFixed(2)}, disc ${dvdEp.discNumber})`,
-      );
-    }
-
-    const dvdMatched = assignedFiles.size;
-    if (dvdMatched > 0) {
-      logger.batch(
-        `DVDCompare: matched ${dvdMatched}/${episodeFiles.length} files, ` +
-        `${episodeFiles.length - dvdMatched} remaining for set-based matching`,
-      );
-    }
-  }
-
-  // ── Build candidate pairings with cost ────────────────────────────────
-  // Cost = runtimeCost + positionalCost
-  //   runtimeCost:    absolute runtime difference in minutes (lower = better)
-  //   positionalCost: how far the episode is from the file's expected position,
-  //                   scaled to be a meaningful tiebreaker (~20 min penalty for
-  //                   matching a file at position 0 to the last episode)
-
-  interface MatchCandidate {
+  interface UnifiedCandidate {
     fileIdx: number;
     epIdx: number;
     cost: number;
-    runtimeDiff: number;
+    runtimeDiffMinutes: number;
+    dvdCompareRuntimeDiffSeconds?: number;
     isMultiEp: boolean;
-    epEndIdx?: number;       // index into tmdbEpisodes for multi-ep end
-    sequentialMatch: boolean; // true if file position ≈ episode position
+    epEndIdx?: number;
+    positionalDiff: number;
   }
 
-  const candidates: MatchCandidate[] = [];
+  const candidates: UnifiedCandidate[] = [];
   const maxFilePos = Math.max(1, episodeFiles.length - 1);
   const maxEpPos = Math.max(1, tmdbEpisodes.length - 1);
 
   // Positional weight: how many "minutes of cost" a full-season positional
   // displacement is equivalent to. A value of 40 means that matching a file
   // at position 0 to the last episode costs an extra 40 minutes.
-  // This ensures sequential position is the dominant signal for shows where
-  // TMDb runtimes are similar (e.g., miniseries with all ~90 min episodes).
   const POSITIONAL_WEIGHT = 40;
 
   for (let fi = 0; fi < episodeFiles.length; fi++) {
-    if (assignedFiles.has(fi)) continue; // Already matched (e.g., by DVDCompare)
-
     const file = episodeFiles[fi];
     // Use exact seconds-to-minutes for precise cost calculation.
-    // file.durationMinutes is Math.round()'d which loses sub-minute precision
-    // and can cause wrong greedy assignments when costs differ by < 1 minute.
-    const fileDuration = file.probeData?.durationSeconds !== undefined
+    const fileDurationMin = file.probeData?.durationSeconds !== undefined
       ? file.probeData.durationSeconds / 60
       : file.durationMinutes;
-    if (fileDuration === undefined) continue;
+    if (fileDurationMin === undefined) continue;
 
+    const fileDurationSec = file.probeData?.durationSeconds;
     const filePos = fi / maxFilePos; // 0..1
 
-    for (let ei = 0; ei < tmdbEpisodes.length; ei++) {
-      if (assignedEps.has(ei)) continue; // Already matched (e.g., by DVDCompare)
+    // Disc range constraint: only consider episodes in this file's disc range
+    const fileDiscNum = parseDiscFromPath(file.file.filePath);
+    const fileRange = fileDiscNum !== undefined ? discEpRanges.get(fileDiscNum) : undefined;
 
-      const ep = tmdbEpisodes[ei];
-      const epRuntime = ep.runtime;
-      if (epRuntime === null || epRuntime === undefined) continue;
+    for (let ei = 0; ei < unifiedRefs.length; ei++) {
+      const ref = unifiedRefs[ei];
+      const ep = ref.tmdbEpisode;
+      const epRuntimeMin = ref.tmdbRuntimeMinutes;
+      if (epRuntimeMin === null || epRuntimeMin === undefined) continue;
+
+      // Skip episodes outside this disc's allocated range
+      if (fileRange && (ei < fileRange.startEp || ei > fileRange.endEp)) continue;
 
       const epPos = ei / maxEpPos; // 0..1
-      const positionalDiff = Math.abs(filePos - epPos);
-      const runtimeDiff = Math.abs(fileDuration - epRuntime);
+      const posDiff = Math.abs(filePos - epPos);
 
-      // Is this file at roughly the expected sequential position?
-      const sequentialMatch = positionalDiff <= 0.15;
+      // ── Compute runtime cost using best available data ────────────
+      // When DVDCompare sub-second data is available AND we have probe
+      // seconds, use whichever source gives the better match.
+      const tmdbDiffMin = Math.abs(fileDurationMin - epRuntimeMin);
+      let runtimeCostMin = tmdbDiffMin;
+      let dvdDiffSec: number | undefined;
+
+      if (ref.dvdCompareRuntimeSeconds !== undefined && fileDurationSec !== undefined) {
+        dvdDiffSec = Math.abs(fileDurationSec - ref.dvdCompareRuntimeSeconds);
+        const dvdDiffMin = dvdDiffSec / 60;
+        runtimeCostMin = Math.min(dvdDiffMin, tmdbDiffMin);
+      }
 
       // ── Single-episode match ──────────────────────────────────────
-      if (runtimeDiff <= 10) {
-        const cost = runtimeDiff + positionalDiff * POSITIONAL_WEIGHT;
+      // Guard: if the file is clearly multi-episode length (>1.7x TMDb
+      // runtime), don't create a single-ep candidate even if DVDCompare
+      // runtime matches. This handles cases like "Encounter at Farpoint"
+      // where DVDCompare lists the combined runtime but TMDb splits it.
+      const isObviousMultiEp = fileDurationMin > epRuntimeMin * MULTI_EPISODE_RUNTIME_MULTIPLIER;
+      if (runtimeCostMin <= 10 && !isObviousMultiEp) {
+        const cost = runtimeCostMin + posDiff * POSITIONAL_WEIGHT;
         candidates.push({
           fileIdx: fi,
           epIdx: ei,
           cost,
-          runtimeDiff,
+          runtimeDiffMinutes: tmdbDiffMin,
+          dvdCompareRuntimeDiffSeconds: dvdDiffSec,
           isMultiEp: false,
-          sequentialMatch,
+          positionalDiff: posDiff,
         });
       }
 
       // ── Multi-episode match (file spans this episode + next) ──────
       if (
-        ei + 1 < tmdbEpisodes.length &&
-        fileDuration > epRuntime * MULTI_EPISODE_RUNTIME_MULTIPLIER
+        ei + 1 < unifiedRefs.length &&
+        fileDurationMin > epRuntimeMin * MULTI_EPISODE_RUNTIME_MULTIPLIER
       ) {
-        const nextEp = tmdbEpisodes[ei + 1];
-        if (nextEp.runtime !== null && nextEp.runtime !== undefined) {
-          const combinedRuntime = epRuntime + nextEp.runtime;
-          const combinedDiff = Math.abs(fileDuration - combinedRuntime);
+        const nextRef = unifiedRefs[ei + 1];
+        const nextRuntimeMin = nextRef.tmdbRuntimeMinutes;
+        if (nextRuntimeMin !== null && nextRuntimeMin !== undefined) {
+          const combinedRuntimeMin = epRuntimeMin + nextRuntimeMin;
+          const combinedDiffMin = Math.abs(fileDurationMin - combinedRuntimeMin);
 
-          if (combinedDiff <= 10) {
+          // Also check DVDCompare combined runtime when available
+          let combinedDvdDiffSec: number | undefined;
+          if (
+            ref.dvdCompareRuntimeSeconds !== undefined &&
+            nextRef.dvdCompareRuntimeSeconds !== undefined &&
+            fileDurationSec !== undefined
+          ) {
+            const combinedDvdSec = ref.dvdCompareRuntimeSeconds + nextRef.dvdCompareRuntimeSeconds;
+            combinedDvdDiffSec = Math.abs(fileDurationSec - combinedDvdSec);
+          }
+
+          const combinedCostMin = combinedDvdDiffSec !== undefined
+            ? Math.min(combinedDvdDiffSec / 60, combinedDiffMin)
+            : combinedDiffMin;
+
+          if (combinedCostMin <= MULTI_EPISODE_COMBINED_TOLERANCE_MIN) {
             // Small penalty for multi-ep to prefer single-ep when close
-            const cost = combinedDiff + positionalDiff * POSITIONAL_WEIGHT + 3;
+            const cost = combinedCostMin + posDiff * POSITIONAL_WEIGHT + 3;
             candidates.push({
               fileIdx: fi,
               epIdx: ei,
               cost,
-              runtimeDiff: combinedDiff,
+              runtimeDiffMinutes: combinedDiffMin,
+              dvdCompareRuntimeDiffSeconds: combinedDvdDiffSec,
               isMultiEp: true,
               epEndIdx: ei + 1,
-              sequentialMatch,
+              positionalDiff: posDiff,
             });
           }
         }
@@ -520,7 +507,6 @@ export async function matchSeasonBatch(
   }
 
   // ── Handle files with no runtime data (position-only matching) ──────
-  // These get assigned after runtime-based matches, filling remaining slots
   const noRuntimeFiles: number[] = [];
   for (let fi = 0; fi < episodeFiles.length; fi++) {
     if (episodeFiles[fi].durationMinutes === undefined) {
@@ -529,7 +515,16 @@ export async function matchSeasonBatch(
   }
 
   // ── Greedy assignment: pick lowest-cost pairing, assign, repeat ─────
-  candidates.sort((a, b) => a.cost - b.cost);
+  // Tiebreaker: when costs are very close (within 0.01 min), prefer the
+  // candidate with smaller positional difference. This ensures that when
+  // runtimes are similar (common for episodes of the same show), the
+  // detected track order is respected rather than jumbling by tiny
+  // DVDCompare runtime deltas.
+  candidates.sort((a, b) => {
+    const costDiff = a.cost - b.cost;
+    if (Math.abs(costDiff) > 0.01) return costDiff;
+    return a.positionalDiff - b.positionalDiff;
+  });
 
   for (const c of candidates) {
     if (assignedFiles.has(c.fileIdx)) continue;
@@ -543,10 +538,17 @@ export async function matchSeasonBatch(
     }
 
     const file = episodeFiles[c.fileIdx];
-    const ep = tmdbEpisodes[c.epIdx];
+    const ref = unifiedRefs[c.epIdx];
+    const ep = ref.tmdbEpisode;
+
+    // Determine if DVDCompare was the winning runtime source for this match
+    const usedDvdCompare = ref.dvdCompareRuntimeSeconds !== undefined &&
+      c.dvdCompareRuntimeDiffSeconds !== undefined &&
+      (c.dvdCompareRuntimeDiffSeconds / 60) <= c.runtimeDiffMinutes;
 
     if (c.isMultiEp && c.epEndIdx !== undefined) {
-      const endEp = tmdbEpisodes[c.epEndIdx];
+      const endRef = unifiedRefs[c.epEndIdx];
+      const endEp = endRef.tmdbEpisode;
       const combinedRuntime = (ep.runtime ?? 0) + (endEp.runtime ?? 0);
       const match = createBatchMatch({
         classifiedFile: file,
@@ -558,13 +560,17 @@ export async function matchSeasonBatch(
         episodeNumberEnd: endEp.episode_number,
         episodeTitle: `${ep.name} / ${endEp.name}`,
         runtime: combinedRuntime,
-        sequentialPositionMatch: c.sequentialMatch,
-        runtimeDiff: c.runtimeDiff,
+        positionalDiff: c.positionalDiff,
+        runtimeDiff: c.runtimeDiffMinutes,
         customTemplate: template,
         isMultiEpisodeMatch: true,
         singleEpisodeRuntimeMinutes: ep.runtime ?? undefined,
         seasonEpisodeCount: tmdbEpisodes.length,
         seasonEpisodes: seasonEpisodesList,
+        isDvdCompareMatch: usedDvdCompare,
+        dvdCompareRuntimeDiffSeconds: c.dvdCompareRuntimeDiffSeconds,
+        dvdCompareTitle: ref.dvdCompareTitle,
+        dvdCompareRuntimeSeconds: ref.dvdCompareRuntimeSeconds,
       });
       matched.push(match);
     } else {
@@ -577,43 +583,203 @@ export async function matchSeasonBatch(
         episodeNumber: ep.episode_number,
         episodeTitle: ep.name,
         runtime: ep.runtime ?? undefined,
-        sequentialPositionMatch: c.sequentialMatch,
-        runtimeDiff: c.runtimeDiff,
+        positionalDiff: c.positionalDiff,
+        runtimeDiff: c.runtimeDiffMinutes,
         customTemplate: template,
         singleEpisodeRuntimeMinutes: ep.runtime ?? undefined,
         seasonEpisodeCount: tmdbEpisodes.length,
         seasonEpisodes: seasonEpisodesList,
+        isDvdCompareMatch: usedDvdCompare,
+        dvdCompareRuntimeDiffSeconds: c.dvdCompareRuntimeDiffSeconds,
+        dvdCompareTitle: ref.dvdCompareTitle,
+        dvdCompareRuntimeSeconds: ref.dvdCompareRuntimeSeconds,
       });
       matched.push(match);
     }
 
+    const sourceLabel = usedDvdCompare
+      ? `dvd\u00b1${c.dvdCompareRuntimeDiffSeconds!.toFixed(1)}s`
+      : `tmdb\u00b1${c.runtimeDiffMinutes.toFixed(1)}min`;
     logger.batch(
-      `Set match: ${file.file.fileName} → ` +
+      `Unified match: ${file.file.fileName} \u2192 ` +
       `S${String(season).padStart(2, '0')}E${String(ep.episode_number).padStart(2, '0')}` +
       (c.isMultiEp && c.epEndIdx !== undefined
-        ? `-E${String(tmdbEpisodes[c.epEndIdx].episode_number).padStart(2, '0')}`
+        ? `-E${String(unifiedRefs[c.epEndIdx].tmdbEpisode.episode_number).padStart(2, '0')}`
         : '') +
       ` "${ep.name}" ` +
-      `(cost: ${c.cost.toFixed(1)}, runtime±${c.runtimeDiff.toFixed(0)}min, ` +
-      `pos: file ${c.fileIdx}/${episodeFiles.length}, ep ${c.epIdx}/${tmdbEpisodes.length})`,
+      `(cost: ${c.cost.toFixed(1)}, ${sourceLabel}, ` +
+      `pos: file ${c.fileIdx}/${episodeFiles.length}, ep ${c.epIdx}/${unifiedRefs.length})`,
     );
   }
 
+  // ── Post-assignment: enforce sequential episode ordering per disc ────
+  // Physical media stores episodes in order on each disc. When file
+  // runtimes are nearly identical, the greedy matcher may assign episodes
+  // out of positional order within a disc. Fix by sorting episode numbers
+  // per disc and rebuilding affected matches.
+  //
+  // GUARD: Only enforce when sequential ordering doesn't significantly
+  // degrade runtime match quality. If the runtime-driven assignment is
+  // clearly better (e.g., John Adams D3 where D1/D2 are reverse but D3
+  // is forward), keep the greedy assignment as-is.
+  {
+    const discMatchGroups = new Map<number, number[]>(); // disc → matched array indices
+    for (let mi = 0; mi < matched.length; mi++) {
+      const m = matched[mi];
+      const disc = parseDiscFromPath(m.mediaFile.filePath);
+      if (disc === undefined) continue;
+      // Skip multi-episode matches (complex to reorder, rare)
+      if (m.parsed.episodeNumbers && m.parsed.episodeNumbers.length > 1) continue;
+      const group = discMatchGroups.get(disc) ?? [];
+      group.push(mi);
+      discMatchGroups.set(disc, group);
+    }
+
+    for (const [disc, matchIndices] of discMatchGroups) {
+      if (matchIndices.length < 2) continue;
+
+      // Sort match indices by file position in episodeFiles (already in
+      // correct order after track reversal)
+      matchIndices.sort((a, b) => {
+        const aIdx = episodeFiles.findIndex(ef => ef.file.filePath === matched[a].mediaFile.filePath);
+        const bIdx = episodeFiles.findIndex(ef => ef.file.filePath === matched[b].mediaFile.filePath);
+        return aIdx - bIdx;
+      });
+
+      // Check if episode numbers are monotonically increasing
+      const epNums = matchIndices.map(mi => matched[mi].tmdbMatch?.episodeNumber ?? 0);
+      let needsFix = false;
+      for (let i = 1; i < epNums.length; i++) {
+        if (epNums[i] < epNums[i - 1]) { needsFix = true; break; }
+      }
+
+      if (needsFix) {
+        const sortedEpNums = [...epNums].sort((a, b) => a - b);
+
+        // Compute total runtime cost for current vs sequential ordering.
+        // Only enforce when sequential ordering doesn't significantly
+        // worsen match quality (max 2 minute total degradation allowed).
+        let currentCost = 0;
+        let sequentialCost = 0;
+        let canCompute = true;
+
+        for (let i = 0; i < matchIndices.length; i++) {
+          const mi = matchIndices[i];
+          const cf = episodeFiles.find(ef => ef.file.filePath === matched[mi].mediaFile.filePath);
+          if (!cf) { canCompute = false; break; }
+
+          const fileDurMin = cf.probeData?.durationSeconds !== undefined
+            ? cf.probeData.durationSeconds / 60 : cf.durationMinutes;
+          if (fileDurMin === undefined) { canCompute = false; break; }
+
+          const curEp = tmdbEpisodes.find(ep => ep.episode_number === epNums[i]);
+          const seqEp = tmdbEpisodes.find(ep => ep.episode_number === sortedEpNums[i]);
+          currentCost += Math.abs(fileDurMin - (curEp?.runtime ?? 0));
+          sequentialCost += Math.abs(fileDurMin - (seqEp?.runtime ?? 0));
+        }
+
+        if (!canCompute || sequentialCost > currentCost + 2) {
+          logger.batch(
+            `Disc ${disc}: non-sequential ordering kept — sequential would degrade matches ` +
+            `(current: ${currentCost.toFixed(1)}min, sequential: ${sequentialCost.toFixed(1)}min)`,
+          );
+        } else {
+          logger.batch(
+            `Disc ${disc}: fixing non-sequential episode order ` +
+            `(${epNums.join(',')} \u2192 ${sortedEpNums.join(',')})`,
+          );
+
+          for (let i = 0; i < matchIndices.length; i++) {
+            const mi = matchIndices[i];
+            const m = matched[mi];
+            const newEpNum = sortedEpNums[i];
+            if (m.tmdbMatch?.episodeNumber === newEpNum) continue;
+
+            const newEp = tmdbEpisodes.find(ep => ep.episode_number === newEpNum);
+            const newRef = unifiedRefs.find(r => r.tmdbEpisode.episode_number === newEpNum);
+            const cf = episodeFiles.find(ef => ef.file.filePath === m.mediaFile.filePath);
+            if (!newEp || !newRef || !cf) continue;
+
+            const fileDurMin = cf.probeData?.durationSeconds !== undefined
+              ? cf.probeData.durationSeconds / 60 : cf.durationMinutes;
+            const tmdbDiffMin = fileDurMin !== undefined && newEp.runtime !== null
+              ? Math.abs(fileDurMin - (newEp.runtime ?? 0)) : undefined;
+
+            let dvdDiffSec: number | undefined;
+            if (newRef.dvdCompareRuntimeSeconds !== undefined && cf.probeData?.durationSeconds !== undefined) {
+              dvdDiffSec = Math.abs(cf.probeData.durationSeconds - newRef.dvdCompareRuntimeSeconds);
+            }
+
+            const usedDvd = newRef.dvdCompareRuntimeSeconds !== undefined &&
+              dvdDiffSec !== undefined && tmdbDiffMin !== undefined &&
+              (dvdDiffSec / 60) <= tmdbDiffMin;
+
+            const fi = episodeFiles.indexOf(cf);
+            const ei = newRef.tmdbIdx;
+            const posDiff = Math.abs(
+              fi / Math.max(1, episodeFiles.length - 1) -
+              ei / Math.max(1, tmdbEpisodes.length - 1),
+            );
+
+            matched[mi] = createBatchMatch({
+              classifiedFile: cf,
+              showId,
+              showName,
+              showYear,
+              season,
+              episodeNumber: newEp.episode_number,
+              episodeTitle: newEp.name,
+              runtime: newEp.runtime ?? undefined,
+              positionalDiff: posDiff,
+              runtimeDiff: tmdbDiffMin,
+              customTemplate: template,
+              singleEpisodeRuntimeMinutes: newEp.runtime ?? undefined,
+              seasonEpisodeCount: tmdbEpisodes.length,
+              seasonEpisodes: seasonEpisodesList,
+              isDvdCompareMatch: usedDvd,
+              dvdCompareRuntimeDiffSeconds: dvdDiffSec,
+              dvdCompareTitle: newRef.dvdCompareTitle,
+              dvdCompareRuntimeSeconds: newRef.dvdCompareRuntimeSeconds,
+            });
+          }
+        }
+      }
+    }
+  }
+
   // ── Assign no-runtime files to remaining episodes by position ───────
-  const remainingEps = tmdbEpisodes
-    .map((ep, idx) => ({ ep, idx }))
-    .filter(({ idx }) => !assignedEps.has(idx))
-    .sort((a, b) => a.idx - b.idx);
+  const remainingEps = unifiedRefs
+    .filter(({ tmdbIdx }) => !assignedEps.has(tmdbIdx))
+    .sort((a, b) => a.tmdbIdx - b.tmdbIdx);
 
   let remEpCursor = 0;
   for (const fi of noRuntimeFiles) {
     if (assignedFiles.has(fi)) continue;
+
+    // Disc range constraint for no-runtime files
+    const noRtDisc = parseDiscFromPath(episodeFiles[fi].file.filePath);
+    const noRtRange = noRtDisc !== undefined ? discEpRanges.get(noRtDisc) : undefined;
+
+    // Find next remaining episode respecting disc range
+    while (remEpCursor < remainingEps.length) {
+      const candidateIdx = remainingEps[remEpCursor].tmdbIdx;
+      if (noRtRange && (candidateIdx < noRtRange.startEp || candidateIdx > noRtRange.endEp)) {
+        remEpCursor++;
+        continue;
+      }
+      break;
+    }
     if (remEpCursor >= remainingEps.length) break;
 
-    const { ep } = remainingEps[remEpCursor];
+    const ref = remainingEps[remEpCursor];
+    const ep = ref.tmdbEpisode;
     assignedFiles.add(fi);
-    assignedEps.add(remainingEps[remEpCursor].idx);
+    assignedEps.add(ref.tmdbIdx);
     remEpCursor++;
+
+    const noRtFilePos = fi / Math.max(1, episodeFiles.length - 1);
+    const noRtEpPos = ref.tmdbIdx / Math.max(1, tmdbEpisodes.length - 1);
+    const noRtPosDiff = Math.abs(noRtFilePos - noRtEpPos);
 
     const match = createBatchMatch({
       classifiedFile: episodeFiles[fi],
@@ -624,79 +790,109 @@ export async function matchSeasonBatch(
       episodeNumber: ep.episode_number,
       episodeTitle: ep.name,
       runtime: ep.runtime ?? undefined,
-      sequentialPositionMatch: true,
+      positionalDiff: noRtPosDiff,
       runtimeDiff: undefined,
       customTemplate: template,
       seasonEpisodeCount: tmdbEpisodes.length,
       seasonEpisodes: seasonEpisodesList,
+      dvdCompareTitle: ref.dvdCompareTitle,
+      dvdCompareRuntimeSeconds: ref.dvdCompareRuntimeSeconds,
     });
     matched.push(match);
   }
 
-  // ── Enrich set-based matches with DVDCompare runtime data ───────────
-  // Files matched via the set-based matcher don't have DVDCompare data yet.
-  // Now that we know which TMDb episode each file was assigned to, we can
-  // look up the corresponding DVDCompare runtime by title similarity.
-  if (dvdCompareDiscs && dvdCompareDiscs.length > 0) {
-    const allDvdEpisodes = dvdCompareDiscs.flatMap((d) => d.episodes);
+  // ── Fallback: fill remaining episode slots before sending to extras ──
+  // Files may have failed candidate generation due to disc range constraints
+  // or the runtimeCost > 10 guard. If they have reasonable episode-length
+  // runtimes AND there are still unfilled TMDb episode slots, match by
+  // position rather than relegating to the specials pool.
+  {
+    const unassignedFileIndices: number[] = [];
+    for (let fi = 0; fi < episodeFiles.length; fi++) {
+      if (!assignedFiles.has(fi)) unassignedFileIndices.push(fi);
+    }
 
-    for (const match of matched) {
-      // Skip matches that already have DVDCompare data (from first-pass)
-      if (match.dvdCompareRuntimeSeconds !== undefined) continue;
-      if (!match.tmdbMatch?.episodeTitle) continue;
+    const fallbackEps = unifiedRefs
+      .filter(({ tmdbIdx }) => !assignedEps.has(tmdbIdx))
+      .sort((a, b) => a.tmdbIdx - b.tmdbIdx);
 
-      const tmdbTitle = match.tmdbMatch.episodeTitle.toLowerCase().trim();
-      let bestSimilarity = 0;
-      let bestDvdEp: typeof allDvdEpisodes[0] | null = null;
+    if (unassignedFileIndices.length > 0 && fallbackEps.length > 0) {
+      // Compute median episode runtime for sanity check
+      const epRuntimes = tmdbEpisodes
+        .filter(ep => ep.runtime !== null && ep.runtime !== undefined && ep.runtime > 0)
+        .map(ep => ep.runtime!);
+      const sortedRuntimes = [...epRuntimes].sort((a, b) => a - b);
+      const medianRuntime = sortedRuntimes.length > 0
+        ? sortedRuntimes[Math.floor(sortedRuntimes.length / 2)]
+        : undefined;
 
-      for (const dvdEp of allDvdEpisodes) {
-        const similarity = normalizedSimilarity(tmdbTitle, dvdEp.title.toLowerCase().trim());
-        if (similarity > bestSimilarity) {
-          bestSimilarity = similarity;
-          bestDvdEp = dvdEp;
+      let fbEpCursor = 0;
+      for (const fi of unassignedFileIndices) {
+        if (fbEpCursor >= fallbackEps.length) break;
+
+        const file = episodeFiles[fi];
+        const fileDurationMin = file.probeData?.durationSeconds !== undefined
+          ? file.probeData.durationSeconds / 60
+          : file.durationMinutes;
+
+        // Sanity check: file runtime should be within the same classification
+        // thresholds used to classify it as an episode in the first place
+        if (fileDurationMin !== undefined && medianRuntime !== undefined) {
+          if (fileDurationMin < medianRuntime * EPISODE_MIN_RUNTIME_RATIO ||
+            fileDurationMin > medianRuntime * EPISODE_MAX_RUNTIME_RATIO) {
+            continue; // Runtime too far off — truly an extra
+          }
         }
-      }
 
-      if (bestDvdEp && bestSimilarity >= DVDCOMPARE_TITLE_SIMILARITY_MIN) {
-        match.dvdCompareRuntimeSeconds = bestDvdEp.runtimeSeconds;
-        match.dvdCompareTitle = bestDvdEp.title;
-        match.matchSource = 'dvdcompare';
+        const ref = fallbackEps[fbEpCursor];
+        const ep = ref.tmdbEpisode;
 
-        // Recompute confidence with combined TMDb + DVDCompare scoring
-        const fileDurationSeconds = match.probeData?.durationSeconds;
-        const dvdCompareRuntimeDiffSeconds = fileDurationSeconds !== undefined
-          ? Math.abs(fileDurationSeconds - bestDvdEp.runtimeSeconds)
-          : undefined;
+        assignedFiles.add(fi);
+        assignedEps.add(ref.tmdbIdx);
+        fbEpCursor++;
 
-        const hasSeqMatch = match.confidenceBreakdown?.some(
-          (item) => item.label.includes('Sequential position match') && item.points > 0,
-        ) ?? false;
+        const fbFilePos = fi / Math.max(1, episodeFiles.length - 1);
+        const fbEpPos = ref.tmdbIdx / Math.max(1, tmdbEpisodes.length - 1);
+        const fbPosDiff = Math.abs(fbFilePos - fbEpPos);
 
-        const runtimeDiffMinutes =
-          match.probeData?.durationSeconds !== undefined && match.tmdbMatch?.runtime !== undefined
-            ? Math.abs(match.probeData.durationSeconds / 60 - match.tmdbMatch.runtime)
-            : undefined;
+        const fbRuntimeDiff = fileDurationMin !== undefined && ep.runtime !== null
+          ? Math.abs(fileDurationMin - (ep.runtime ?? 0)) : undefined;
 
-        const isMultiEp = match.tmdbMatch?.episodeNumberEnd !== undefined;
+        let fbDvdDiffSec: number | undefined;
+        if (ref.dvdCompareRuntimeSeconds !== undefined && file.probeData?.durationSeconds !== undefined) {
+          fbDvdDiffSec = Math.abs(file.probeData.durationSeconds - ref.dvdCompareRuntimeSeconds);
+        }
 
-        const breakdown = computeBatchConfidenceBreakdown({
-          sequentialPositionMatch: hasSeqMatch,
-          runtimeDiffMinutes,
-          isMultiEpisodeMatch: isMultiEp,
-          singleEpisodeRuntimeMinutes: match.tmdbMatch?.runtime ?? undefined,
-          isDvdCompareMatch: true,
-          dvdCompareRuntimeDiffSeconds,
+        const fbUsedDvd = ref.dvdCompareRuntimeSeconds !== undefined &&
+          fbDvdDiffSec !== undefined && fbRuntimeDiff !== undefined &&
+          (fbDvdDiffSec / 60) <= fbRuntimeDiff;
+
+        const match = createBatchMatch({
+          classifiedFile: file,
+          showId,
+          showName,
+          showYear,
+          season,
+          episodeNumber: ep.episode_number,
+          episodeTitle: ep.name,
+          runtime: ep.runtime ?? undefined,
+          positionalDiff: fbPosDiff,
+          runtimeDiff: fbRuntimeDiff,
+          customTemplate: template,
+          singleEpisodeRuntimeMinutes: ep.runtime ?? undefined,
+          seasonEpisodeCount: tmdbEpisodes.length,
+          seasonEpisodes: seasonEpisodesList,
+          isDvdCompareMatch: fbUsedDvd,
+          dvdCompareRuntimeDiffSeconds: fbDvdDiffSec,
+          dvdCompareTitle: ref.dvdCompareTitle,
+          dvdCompareRuntimeSeconds: ref.dvdCompareRuntimeSeconds,
         });
-
-        match.confidence = breakdown.total;
-        match.confidenceBreakdown = breakdown.items;
-        match.status = breakdown.total >= CONFIDENCE_MATCHED_THRESHOLD ? 'matched' : 'ambiguous';
+        matched.push(match);
 
         logger.batch(
-          `DVDCompare enrichment: ${match.mediaFile.fileName} → ` +
-          `"${bestDvdEp.title}" (${bestDvdEp.runtimeSeconds}s, ` +
-          `similarity: ${(bestSimilarity * 100).toFixed(0)}%, ` +
-          `confidence: ${breakdown.total}%)`,
+          `Fallback match: ${file.file.fileName} → ` +
+          `S${String(season).padStart(2, '0')}E${String(ep.episode_number).padStart(2, '0')}` +
+          ` "${ep.name}" (positional, episode slots unfilled)`,
         );
       }
     }
@@ -715,7 +911,7 @@ export async function matchSeasonBatch(
     `(${episodeFiles.length} files, ${tmdbEpisodes.length} TMDb episodes)`,
   );
 
-  return { matched, reclassifiedExtras };
+  return { matched, reclassifiedExtras, detectedTrackOrder };
 }
 
 export interface SpecialsBatchResult {
@@ -834,7 +1030,7 @@ export async function matchSpecialsBatch(
       };
 
       const breakdown = computeBatchConfidenceBreakdown({
-        sequentialPositionMatch: false,
+        positionalDiff: 1.0, // Specials have no meaningful positional ordering
         runtimeDiffMinutes: bestDiff,
         isSpecialsMatch: true,
         tmdbRuntimeMinutes: bestSpecial.runtime,
@@ -860,7 +1056,7 @@ export async function matchSpecialsBatch(
       });
 
       logger.batch(
-        `Special match: ${candidate.file.fileName} → ` +
+        `Special match: ${candidate.file.fileName} \u2192 ` +
         `S00E${String(bestSpecial.episode.episode_number).padStart(2, '0')} ` +
         `"${bestSpecial.episode.name}" ` +
         `(file: ${fileDuration}min, tmdb: ${bestSpecial.runtime}min, diff: ${bestDiff.toFixed(1)}min/${pctDiff.toFixed(0)}%)`
@@ -888,7 +1084,7 @@ interface CreateBatchMatchParams {
   episodeNumberEnd?: number;
   episodeTitle: string;
   runtime: number | undefined;
-  sequentialPositionMatch: boolean;
+  positionalDiff: number;
   runtimeDiff: number | undefined;
   customTemplate?: string;
   isMultiEpisodeMatch?: boolean;
@@ -905,7 +1101,7 @@ function createBatchMatch(params: CreateBatchMatchParams): MatchResult {
   const {
     classifiedFile, showId, showName, showYear, season,
     episodeNumber, episodeNumberEnd, episodeTitle, runtime,
-    sequentialPositionMatch, runtimeDiff, customTemplate,
+    positionalDiff, runtimeDiff, customTemplate,
     isMultiEpisodeMatch, singleEpisodeRuntimeMinutes,
     seasonEpisodeCount, seasonEpisodes,
     isDvdCompareMatch, dvdCompareRuntimeDiffSeconds,
@@ -928,7 +1124,7 @@ function createBatchMatch(params: CreateBatchMatchParams): MatchResult {
   };
 
   const breakdown = computeBatchConfidenceBreakdown({
-    sequentialPositionMatch,
+    positionalDiff,
     runtimeDiffMinutes: runtimeDiff,
     isMultiEpisodeMatch,
     singleEpisodeRuntimeMinutes,
@@ -956,8 +1152,8 @@ function createBatchMatch(params: CreateBatchMatchParams): MatchResult {
     newFilename,
     status: breakdown.total >= CONFIDENCE_MATCHED_THRESHOLD ? 'matched' : 'ambiguous',
     matchSource: isDvdCompareMatch ? 'dvdcompare' : 'tmdb',
-    dvdCompareRuntimeSeconds: isDvdCompareMatch ? dvdCompareRuntimeSeconds : undefined,
-    dvdCompareTitle: isDvdCompareMatch ? dvdCompareTitle : undefined,
+    dvdCompareRuntimeSeconds,
+    dvdCompareTitle,
   };
 }
 
@@ -973,22 +1169,30 @@ function createUnmatchedResult(classifiedFile: ClassifiedFile): MatchResult {
 }
 
 /**
- * Detect whether tracks within individual discs are in reverse episode order.
+ * Detect whether tracks within discs are in reverse episode order and fix.
  *
- * MakeMKV extracts titles in physical title-id order, which doesn't always
- * correspond to episode chronological order. This function compares the
- * total runtime cost of the current (forward) track ordering against a
- * reversed ordering for each disc. If reversing a disc's tracks produces
- * a significantly better fit against the positionally expected TMDb
- * episodes, those tracks are reversed in-place.
+ * Uses unified episode refs (with DVDCompare sub-second runtimes when
+ * available) and disc episode ranges to accurately compare forward vs
+ * reverse ordering. The decision is GLOBAL: all discs are summed together
+ * because a physical media release is mastered one way.
+ *
+ * When a `trackOrderHint` is provided (from a previously-matched season of
+ * the same show), the hint is followed unless the current season's evidence
+ * STRONGLY contradicts it. This prevents per-season detection noise from
+ * overriding a decision that was clear in an earlier season.
  *
  * Only discs with 2+ episode files and valid runtime data are evaluated.
- * A disc is reversed when the reverse ordering cost is < 75% of forward cost.
+ * Tracks are reversed when the reverse ordering cost is < 75% of forward.
+ *
+ * Returns the detected track order ('forward' or 'reverse') so the caller
+ * can propagate it to subsequent seasons.
  */
 export function detectAndApplyTrackOrder(
   episodeFiles: ClassifiedFile[],
-  tmdbEpisodes: TmdbEpisode[],
-): void {
+  unifiedRefs: UnifiedEpisodeRef[],
+  discEpRanges: Map<number, { startEp: number; endEp: number }>,
+  trackOrderHint?: 'forward' | 'reverse',
+): 'forward' | 'reverse' {
   // Group contiguous runs of files by disc number
   interface DiscRun { disc: number; startIdx: number; endIdx: number }
   const discRuns: DiscRun[] = [];
@@ -1011,64 +1215,236 @@ export function detectAndApplyTrackOrder(
     discRuns.push({ disc: currentDisc, startIdx: runStart, endIdx: episodeFiles.length - 1 });
   }
 
-  if (discRuns.length === 0) return;
+  if (discRuns.length === 0) return trackOrderHint ?? 'forward';
+
+  // Sum forward and reverse cost GLOBALLY across all discs.
+  // Use disc episode ranges to pick the correct unified ref for each slot.
+  let totalForwardCost = 0;
+  let totalReverseCost = 0;
+  let hasValidDisc = false;
 
   for (const run of discRuns) {
     const count = run.endIdx - run.startIdx + 1;
-    // The TMDb episodes these files would positionally map to
-    if (run.startIdx + count > tmdbEpisodes.length) continue;
 
-    let forwardCost = 0;
-    let reverseCost = 0;
+    // Get the episode range for this disc
+    const range = discEpRanges.get(run.disc);
+    if (!range) continue;
+
+    // Only evaluate positions where we have unified refs
+    const availableEps = Math.min(count, range.endEp - range.startEp + 1);
+    if (availableEps < 2) continue;
+
+    let discForward = 0;
+    let discReverse = 0;
     let hasAllRuntimes = true;
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < availableEps; i++) {
       const fwd = episodeFiles[run.startIdx + i];
       const rev = episodeFiles[run.endIdx - i];
-      const ep = tmdbEpisodes[run.startIdx + i];
+      const refIdx = range.startEp + i;
+      if (refIdx >= unifiedRefs.length) { hasAllRuntimes = false; break; }
+      const ref = unifiedRefs[refIdx];
 
-      const fwdDuration = fwd.probeData?.durationSeconds !== undefined
+      const fwdDurationMin = fwd.probeData?.durationSeconds !== undefined
         ? fwd.probeData.durationSeconds / 60
         : fwd.durationMinutes;
-      const revDuration = rev.probeData?.durationSeconds !== undefined
+      const revDurationMin = rev.probeData?.durationSeconds !== undefined
         ? rev.probeData.durationSeconds / 60
         : rev.durationMinutes;
-      const epRuntime = ep.runtime;
 
-      if (fwdDuration === undefined || revDuration === undefined ||
-          epRuntime === null || epRuntime === undefined) {
+      // Use DVDCompare sub-second runtime when available, TMDb minutes otherwise
+      let epRuntimeMin: number | undefined;
+      if (ref.dvdCompareRuntimeSeconds !== undefined) {
+        epRuntimeMin = ref.dvdCompareRuntimeSeconds / 60;
+      } else if (ref.tmdbRuntimeMinutes !== null && ref.tmdbRuntimeMinutes !== undefined) {
+        epRuntimeMin = ref.tmdbRuntimeMinutes;
+      }
+
+      if (fwdDurationMin === undefined || revDurationMin === undefined || epRuntimeMin === undefined) {
         hasAllRuntimes = false;
         break;
       }
 
-      forwardCost += Math.abs(fwdDuration - epRuntime);
-      reverseCost += Math.abs(revDuration - epRuntime);
+      discForward += Math.abs(fwdDurationMin - epRuntimeMin);
+      discReverse += Math.abs(revDurationMin - epRuntimeMin);
     }
 
     if (!hasAllRuntimes) continue;
 
-    // Reverse if it's significantly better: < 75% of forward cost (25%+ savings).
-    // Also require forward cost to be non-trivial (> 2 min total) to avoid
-    // flipping discs that already match well in forward order.
-    if (reverseCost < forwardCost * TRACK_REVERSAL_THRESHOLD && forwardCost > TRACK_REVERSAL_MIN_FORWARD_COST) {
-      logger.batch(
-        `Disc ${run.disc}: reverse track order detected ` +
-        `(forward cost: ${forwardCost.toFixed(1)}min, reverse: ${reverseCost.toFixed(1)}min) ` +
-        `— reordering ${count} files`,
-      );
+    totalForwardCost += discForward;
+    totalReverseCost += discReverse;
+    hasValidDisc = true;
 
-      // Reverse the files in-place within this disc's range
+    logger.batch(
+      `Disc ${run.disc}: forward cost: ${discForward.toFixed(1)}min, reverse: ${discReverse.toFixed(1)}min`,
+    );
+  }
+
+  // ── Correlation-based detection (DVDCompare sub-second precision) ────
+  // When absolute costs are too similar to distinguish forward from reverse
+  // (common with uniform-runtime shows like TNG where all episodes are ~46min
+  // and Blu-ray overhead is a constant ~2min per file), use the PATTERN of
+  // runtime variation instead. DVDCompare provides sub-second precision
+  // (e.g., 45:24 vs 45:44), and file probes provide sub-second precision
+  // (e.g., 47:32 vs 47:53). A file that's slightly longer should match an
+  // episode that's slightly longer. The covariance between file runtimes
+  // and DVDCompare runtimes will be higher in the correct ordering.
+  let totalForwardCorr = 0;
+  let totalReverseCorr = 0;
+  let hasCorrelationData = false;
+
+  for (const run of discRuns) {
+    const count = run.endIdx - run.startIdx + 1;
+    const range = discEpRanges.get(run.disc);
+    if (!range) continue;
+
+    const availableEps = Math.min(count, range.endEp - range.startEp + 1);
+    if (availableEps < 3) continue; // Need 3+ data points for meaningful correlation
+
+    // Collect DVDCompare sub-second runtimes and file probe runtimes (seconds)
+    const dvdRuntimes: number[] = [];
+    const fwdFileRuntimes: number[] = [];
+    const revFileRuntimes: number[] = [];
+    let allHaveDvdData = true;
+
+    for (let i = 0; i < availableEps; i++) {
+      const refIdx = range.startEp + i;
+      if (refIdx >= unifiedRefs.length) { allHaveDvdData = false; break; }
+      const ref = unifiedRefs[refIdx];
+      if (ref.dvdCompareRuntimeSeconds === undefined) { allHaveDvdData = false; break; }
+
+      const fwd = episodeFiles[run.startIdx + i];
+      const rev = episodeFiles[run.endIdx - i];
+      const fwdSec = fwd.probeData?.durationSeconds;
+      const revSec = rev.probeData?.durationSeconds;
+      if (fwdSec === undefined || revSec === undefined) { allHaveDvdData = false; break; }
+
+      dvdRuntimes.push(ref.dvdCompareRuntimeSeconds);
+      fwdFileRuntimes.push(fwdSec);
+      revFileRuntimes.push(revSec);
+    }
+
+    if (!allHaveDvdData || dvdRuntimes.length < 3) continue;
+
+    // Compute covariance for forward and reverse pairings.
+    // Higher covariance = runtime variation patterns align better.
+    const dvdMean = dvdRuntimes.reduce((a, b) => a + b, 0) / dvdRuntimes.length;
+    const fwdMean = fwdFileRuntimes.reduce((a, b) => a + b, 0) / fwdFileRuntimes.length;
+    const revMean = revFileRuntimes.reduce((a, b) => a + b, 0) / revFileRuntimes.length;
+
+    let discFwdCorr = 0;
+    let discRevCorr = 0;
+    for (let i = 0; i < dvdRuntimes.length; i++) {
+      const dvdDev = dvdRuntimes[i] - dvdMean;
+      discFwdCorr += (fwdFileRuntimes[i] - fwdMean) * dvdDev;
+      discRevCorr += (revFileRuntimes[i] - revMean) * dvdDev;
+    }
+
+    totalForwardCorr += discFwdCorr;
+    totalReverseCorr += discRevCorr;
+    hasCorrelationData = true;
+
+    logger.batch(
+      `Disc ${run.disc}: forward corr: ${discFwdCorr.toFixed(1)}, reverse corr: ${discRevCorr.toFixed(1)}`,
+    );
+  }
+
+  if (hasCorrelationData) {
+    logger.batch(
+      `Correlation totals: forward=${totalForwardCorr.toFixed(1)}, reverse=${totalReverseCorr.toFixed(1)}`,
+    );
+  }
+
+  if (!hasValidDisc && !hasCorrelationData) return trackOrderHint ?? 'forward';
+
+  // Global decision: reverse if significantly better.
+  // Three signals are used in priority order:
+  //   1. Absolute cost difference (when costs clearly differ)
+  //   2. Runtime correlation (when DVDCompare sub-second data shows a clear pattern)
+  //   3. Cross-season hint (from a previously-matched season)
+  //
+  // When a hint is provided from a previous season, follow it unless the
+  // current season STRONGLY contradicts it (forward < 50% of reverse).
+  let shouldReverse: boolean;
+  let detectionMethod = 'cost';
+
+  // Helper: check if absolute costs clearly distinguish the ordering.
+  // Returns true if costs are "ambiguous" (too close to call).
+  // Costs are ambiguous when BOTH directions are within the threshold of each
+  // other — i.e., neither clearly wins. The previous one-sided check
+  // (reverse >= forward * 0.75) would flag forward=10/reverse=50 as ambiguous
+  // even though forward is 5x better. The symmetric version requires BOTH to
+  // be within the threshold factor of the other.
+  const costsAreAmbiguous = !hasValidDisc ||
+    (totalForwardCost <= TRACK_REVERSAL_MIN_FORWARD_COST && totalReverseCost <= TRACK_REVERSAL_MIN_FORWARD_COST) ||
+    (totalReverseCost >= totalForwardCost * TRACK_REVERSAL_THRESHOLD &&
+      totalForwardCost >= totalReverseCost * TRACK_REVERSAL_THRESHOLD);
+
+  if (trackOrderHint === 'reverse') {
+    // Hint says reverse — follow it unless forward is dramatically better
+    const forwardStronglyBetter = hasValidDisc &&
+      totalForwardCost < totalReverseCost * 0.5 &&
+      totalReverseCost > TRACK_REVERSAL_MIN_FORWARD_COST;
+    shouldReverse = !forwardStronglyBetter;
+    detectionMethod = 'hint';
+  } else if (trackOrderHint === 'forward') {
+    // Hint says forward — follow it unless reverse is dramatically better
+    const reverseStronglyBetter = hasValidDisc &&
+      totalReverseCost < totalForwardCost * 0.5 &&
+      totalForwardCost > TRACK_REVERSAL_MIN_FORWARD_COST;
+    shouldReverse = reverseStronglyBetter;
+    detectionMethod = 'hint';
+  } else if (hasValidDisc &&
+    totalReverseCost < totalForwardCost * TRACK_REVERSAL_THRESHOLD &&
+    totalForwardCost > TRACK_REVERSAL_MIN_FORWARD_COST) {
+    // No hint — absolute costs clearly favor reverse
+    shouldReverse = true;
+    detectionMethod = 'cost';
+  } else if (hasCorrelationData && costsAreAmbiguous) {
+    // No hint, costs are ambiguous — use correlation as tiebreaker.
+    // The max correlation must exceed a minimum signal threshold to avoid
+    // acting on noise from discs with nearly identical runtimes.
+    const maxCorr = Math.max(totalForwardCorr, totalReverseCorr);
+    if (maxCorr > 10) {
+      shouldReverse = totalReverseCorr > totalForwardCorr;
+      detectionMethod = 'correlation';
+    } else {
+      shouldReverse = false;
+      detectionMethod = 'default (weak correlation)';
+    }
+  } else {
+    shouldReverse = false;
+    detectionMethod = 'default';
+  }
+
+  const decision: 'forward' | 'reverse' = shouldReverse ? 'reverse' : 'forward';
+
+  if (shouldReverse) {
+    logger.batch(
+      `Global track order: REVERSE (${detectionMethod})` +
+      (trackOrderHint ? ` (hint: ${trackOrderHint})` : '') +
+      ` (forward: ${totalForwardCost.toFixed(1)}min, reverse: ${totalReverseCost.toFixed(1)}min)` +
+      (hasCorrelationData ? ` (fwd corr: ${totalForwardCorr.toFixed(0)}, rev corr: ${totalReverseCorr.toFixed(0)})` : '') +
+      ` \u2014 reordering all discs`,
+    );
+
+    // Reverse files within each disc
+    for (const run of discRuns) {
       const slice = episodeFiles.slice(run.startIdx, run.endIdx + 1).reverse();
       for (let i = 0; i < slice.length; i++) {
         episodeFiles[run.startIdx + i] = slice[i];
       }
-    } else {
-      logger.batch(
-        `Disc ${run.disc}: track order OK ` +
-        `(forward cost: ${forwardCost.toFixed(1)}min, reverse: ${reverseCost.toFixed(1)}min)`,
-      );
     }
+  } else {
+    logger.batch(
+      `Global track order: forward (${detectionMethod})` +
+      (trackOrderHint ? ` (hint: ${trackOrderHint})` : '') +
+      ` (forward: ${totalForwardCost.toFixed(1)}min, reverse: ${totalReverseCost.toFixed(1)}min)` +
+      (hasCorrelationData ? ` (fwd corr: ${totalForwardCorr.toFixed(0)}, rev corr: ${totalReverseCorr.toFixed(0)})` : ''),
+    );
   }
+
+  return decision;
 }
 
 /**
