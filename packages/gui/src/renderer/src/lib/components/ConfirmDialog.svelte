@@ -34,6 +34,39 @@
   let selected = $state<boolean[]>([]);
   let openTooltipKey = $state<string | null>(null);
 
+  // ── Reorder state ──────────────────────────────────────────────────
+  // Maps season label → ordered array of indices into renameable[].
+  // Only populated for seasons where user has reordered files.
+  let fileOrder = $state<Map<string, number[]>>(new Map());
+  // Maps season label → the original order (snapshot at first interaction)
+  let originalOrder = $state<Map<string, number[]>>(new Map());
+  // Files the user explicitly clicked to move (by filePath)
+  let userMoved = $state<Set<string>>(new Set());
+  // Reorder version counter — bumped on each reorder to trigger re-derivation
+  let reorderVersion = $state(0);
+
+  /**
+   * Derive reorder status for each file:
+   * - 'moved'     — user explicitly moved this file
+   * - 'displaced' — bumped as a side effect of another move
+   * - undefined   — still in original position
+   */
+  let reorderStatus = $derived.by(() => {
+    void reorderVersion;
+    const status = new Map<string, 'moved' | 'displaced'>();
+    for (const [label, order] of fileOrder) {
+      const orig = originalOrder.get(label);
+      if (!orig) continue;
+      for (let i = 0; i < order.length; i++) {
+        if (order[i] !== orig[i]) {
+          const filePath = renameable[order[i]].mediaFile.filePath;
+          status.set(filePath, userMoved.has(filePath) ? 'moved' : 'displaced');
+        }
+      }
+    }
+    return status;
+  });
+
   let warningFiles = $derived(
     matches.filter((m) => m.warnings && m.warnings.length > 0),
   );
@@ -65,7 +98,7 @@
   }
 
   type RenameableRow =
-    | { type: 'matched'; match: MatchResultData; index: number }
+    | { type: 'matched'; match: MatchResultData; index: number; isMultiEp: boolean; filePos: number }
     | { type: 'missing'; episode: MissingEpisode };
 
   interface RenameableGroup {
@@ -73,6 +106,8 @@
     rows: RenameableRow[];
     matchedCount: number;
     totalCount: number;
+    /** Number of movable (single-episode) files in this group */
+    movableCount: number;
   }
 
   function toggleAll(checked: boolean) {
@@ -84,11 +119,127 @@
     onconfirm(confirmed);
   }
 
+  /** Check if a match is a multi-episode file (locked, not reorderable) */
+  function isMultiEpisode(m: MatchResultData): boolean {
+    const tm = m.tmdbMatch;
+    if (!tm) return false;
+    return tm.episodeNumberEnd !== undefined && tm.episodeNumberEnd !== tm.episodeNumber;
+  }
+
+  /** Move a file within a season group and update episode assignments */
+  async function moveFile(seasonLabel: string, fromPos: number, toPos: number) {
+    // Get or initialize the file order for this season
+    let order = fileOrder.get(seasonLabel);
+    if (!order) {
+      // Initialize from current groupedRenameable
+      const group = groupedRenameable.find((g) => g.label === seasonLabel);
+      if (!group) return;
+      order = group.rows
+        .filter((r): r is RenameableRow & { type: 'matched' } => r.type === 'matched' && !r.isMultiEp)
+        .map((r) => r.index);
+      // Snapshot the original order for comparison
+      originalOrder.set(seasonLabel, [...order]);
+      originalOrder = new Map(originalOrder);
+    }
+
+    if (fromPos < 0 || fromPos >= order.length || toPos < 0 || toPos >= order.length) return;
+
+    // Splice: remove from fromPos, insert at toPos
+    const [moved] = order.splice(fromPos, 1);
+    order.splice(toPos, 0, moved);
+
+    // Track this file as explicitly moved by the user
+    userMoved.add(renameable[moved].mediaFile.filePath);
+    userMoved = new Set(userMoved);
+
+    // Save updated order
+    fileOrder.set(seasonLabel, [...order]);
+    // Trigger re-derivation
+    fileOrder = new Map(fileOrder);
+
+    // Apply episode reassignment
+    await applyReorder(seasonLabel, order);
+  }
+
+  /** Re-assign episode data to files based on the user's ordering */
+  async function applyReorder(seasonLabel: string, order: number[]) {
+    // Get the season's episode list from the first match
+    const firstMatch = renameable[order[0]];
+    const seasonEpisodes = firstMatch?.tmdbMatch?.seasonEpisodes;
+    if (!seasonEpisodes) return;
+
+    // Build list of available episode slots (excluding those consumed by multi-ep files)
+    const multiEpNums = new Set<number>();
+    for (const m of renameable) {
+      if (isMultiEpisode(m) && m.tmdbMatch?.seasonNumber !== undefined) {
+        const tm = m.tmdbMatch;
+        const label = `Season ${tm.seasonNumber}`;
+        if (label !== seasonLabel) continue;
+        if (tm.episodeNumber !== undefined) multiEpNums.add(tm.episodeNumber);
+        if (tm.episodeNumberEnd !== undefined) {
+          for (let ep = tm.episodeNumber; ep <= tm.episodeNumberEnd; ep++) {
+            multiEpNums.add(ep);
+          }
+        }
+      }
+    }
+
+    const availableEpisodes = seasonEpisodes.filter((ep) => !multiEpNums.has(ep.episodeNumber));
+
+    // Zip: file[i] → episode[i]
+    const itemsToRegenerate: Array<{ idx: number; tmdbMatch: MatchResultData['tmdbMatch']; extension: string }> = [];
+
+    for (let i = 0; i < order.length && i < availableEpisodes.length; i++) {
+      const matchIdx = order[i];
+      const m = renameable[matchIdx];
+      const ep = availableEpisodes[i];
+      if (!m.tmdbMatch) continue;
+
+      // Update episode assignment
+      m.tmdbMatch.episodeNumber = ep.episodeNumber;
+      m.tmdbMatch.episodeTitle = ep.episodeName;
+      m.tmdbMatch.runtime = ep.runtime ?? undefined;
+      if (m.parsed.episodeNumbers) {
+        m.parsed.episodeNumbers = [ep.episodeNumber];
+      }
+
+      itemsToRegenerate.push({
+        idx: matchIdx,
+        tmdbMatch: { ...m.tmdbMatch },
+        extension: m.mediaFile.extension,
+      });
+    }
+
+    // Regenerate filenames via IPC
+    if (itemsToRegenerate.length > 0) {
+      try {
+        const newFilenames = await window.api.regenerateFilenames(
+          itemsToRegenerate.map((item) => ({
+            tmdbMatch: item.tmdbMatch as Record<string, unknown>,
+            extension: item.extension,
+          })),
+        );
+        for (let i = 0; i < itemsToRegenerate.length; i++) {
+          renameable[itemsToRegenerate[i].idx].newFilename = newFilenames[i];
+        }
+      } catch {
+        // Filename regeneration failed — episode data is already updated,
+        // filename will be stale but the confirm response carries tmdbMatch
+      }
+    }
+
+    // Bump version to trigger UI re-derivation
+    reorderVersion++;
+  }
+
   let hasDvdCompare = $derived(renameable.some((m) => m.dvdCompareUsed));
 
   let groupedRenameable = $derived.by(() => {
+    // Touch reorderVersion to re-derive when reorder happens
+    void reorderVersion;
+
     // First pass: group items by season
-    type IndexedItem = { match: MatchResultData; index: number };
+    type IndexedItem = { match: MatchResultData; index: number; isMultiEp: boolean };
     const itemsByLabel = new Map<string, IndexedItem[]>();
     const groupOrder: string[] = [];
 
@@ -100,7 +251,7 @@
         itemsByLabel.set(label, []);
         groupOrder.push(label);
       }
-      itemsByLabel.get(label)!.push({ match: m, index: i });
+      itemsByLabel.get(label)!.push({ match: m, index: i, isMultiEp: isMultiEpisode(m) });
     }
 
     // Second pass: build interleaved rows per group
@@ -111,14 +262,11 @@
       const matchedEpNums = new Set<number>();
       let seasonEpisodes: MissingEpisode[] | undefined;
 
-      // Build episode→item lookup
-      const epToItem = new Map<number, IndexedItem>();
       for (const item of items) {
         const tm = item.match.tmdbMatch;
         if (!tm) continue;
         if (!seasonEpisodes && tm.seasonEpisodes) seasonEpisodes = tm.seasonEpisodes;
         if (tm.episodeNumber !== undefined) {
-          epToItem.set(tm.episodeNumber, item);
           matchedEpNums.add(tm.episodeNumber);
           if (tm.episodeNumberEnd !== undefined) {
             for (let ep = tm.episodeNumber + 1; ep <= tm.episodeNumberEnd; ep++) {
@@ -131,35 +279,103 @@
       let rows: RenameableRow[];
       let totalCount: number;
       let matchedCount: number;
+      let movableCount = 0;
+
+      // Check if user has a custom file order for this season
+      const customOrder = fileOrder.get(label);
 
       if (seasonEpisodes) {
         totalCount = seasonEpisodes.length;
         matchedCount = matchedEpNums.size;
         rows = [];
-        const usedItems = new Set<IndexedItem>();
-        for (const ep of seasonEpisodes) {
-          const matchItem = epToItem.get(ep.episodeNumber);
-          if (matchItem) {
-            rows.push({ type: 'matched', match: matchItem.match, index: matchItem.index });
-            usedItems.add(matchItem);
-          } else if (!matchedEpNums.has(ep.episodeNumber)) {
-            rows.push({ type: 'missing', episode: ep });
+
+        if (customOrder) {
+          // User has reordered: build rows from custom order
+          // First, add multi-ep files in their episode positions
+          const multiEpItems = items.filter((item) => item.isMultiEp);
+          const multiEpByEp = new Map<number, IndexedItem>();
+          for (const item of multiEpItems) {
+            const tm = item.match.tmdbMatch;
+            if (tm?.episodeNumber !== undefined) {
+              multiEpByEp.set(tm.episodeNumber, item);
+            }
           }
-        }
-        // Append any items not in the episode list (edge case)
-        for (const item of items) {
-          if (!usedItems.has(item)) {
-            rows.push({ type: 'matched', match: item.match, index: item.index });
+
+          // Walk episode list, placing multi-ep files at their positions
+          // and single-ep files from the custom order
+          let singleIdx = 0;
+          for (const ep of seasonEpisodes) {
+            const multiItem = multiEpByEp.get(ep.episodeNumber);
+            if (multiItem) {
+              rows.push({ type: 'matched', match: multiItem.match, index: multiItem.index, isMultiEp: true, filePos: -1 });
+              continue;
+            }
+            // Skip episodes consumed by multi-ep ranges
+            if (matchedEpNums.has(ep.episodeNumber) && !customOrder.some((idx) => {
+              const m = renameable[idx];
+              return m.tmdbMatch?.episodeNumber === ep.episodeNumber;
+            })) {
+              continue; // Consumed by a multi-ep file
+            }
+            // Place next single-ep file from custom order
+            if (singleIdx < customOrder.length) {
+              const matchIdx = customOrder[singleIdx];
+              const m = renameable[matchIdx];
+              rows.push({ type: 'matched', match: m, index: matchIdx, isMultiEp: false, filePos: singleIdx });
+              singleIdx++;
+              movableCount++;
+            } else if (!matchedEpNums.has(ep.episodeNumber)) {
+              rows.push({ type: 'missing', episode: ep });
+            }
+          }
+        } else {
+          // Default: walk full episode list in order, interleaving matched and missing
+          const epToItem = new Map<number, IndexedItem>();
+          for (const item of items) {
+            const tm = item.match.tmdbMatch;
+            if (tm?.episodeNumber !== undefined) {
+              epToItem.set(tm.episodeNumber, item);
+            }
+          }
+
+          const usedItems = new Set<IndexedItem>();
+          let singlePos = 0;
+          for (const ep of seasonEpisodes) {
+            const matchItem = epToItem.get(ep.episodeNumber);
+            if (matchItem) {
+              const isME = matchItem.isMultiEp;
+              rows.push({ type: 'matched', match: matchItem.match, index: matchItem.index, isMultiEp: isME, filePos: isME ? -1 : singlePos });
+              if (!isME) {
+                singlePos++;
+                movableCount++;
+              }
+              usedItems.add(matchItem);
+            } else if (!matchedEpNums.has(ep.episodeNumber)) {
+              rows.push({ type: 'missing', episode: ep });
+            }
+          }
+          // Append any items not in the episode list (edge case)
+          for (const item of items) {
+            if (!usedItems.has(item)) {
+              rows.push({ type: 'matched', match: item.match, index: item.index, isMultiEp: item.isMultiEp, filePos: item.isMultiEp ? -1 : singlePos++ });
+              if (!item.isMultiEp) movableCount++;
+            }
           }
         }
       } else {
         const firstTm = items[0]?.match.tmdbMatch;
         totalCount = firstTm?.seasonEpisodeCount ?? items.length;
         matchedCount = matchedEpNums.size || items.length;
-        rows = items.map((item) => ({ type: 'matched' as const, match: item.match, index: item.index }));
+        let singlePos = 0;
+        rows = items.map((item) => {
+          const isME = item.isMultiEp;
+          const fp = isME ? -1 : singlePos++;
+          if (!isME) movableCount++;
+          return { type: 'matched' as const, match: item.match, index: item.index, isMultiEp: isME, filePos: fp };
+        });
       }
 
-      groups.push({ label, rows, matchedCount, totalCount });
+      groups.push({ label, rows, matchedCount, totalCount, movableCount });
     }
 
     return groups;
@@ -206,6 +422,7 @@
     <thead>
       <tr>
         <th class="col-check"></th>
+        <th class="col-reorder"></th>
         <th>Original</th>
         <th class="col-fixed">Size</th>
         <th class="col-fixed">Runtime</th>
@@ -221,7 +438,7 @@
     <tbody>
       {#each groupedRenameable as group}
         <tr class="season-divider">
-          <td colspan={hasDvdCompare ? 9 : 8}>
+          <td colspan={hasDvdCompare ? 10 : 9}>
             <span class="season-label">{group.label}</span>
             {#if group.totalCount > 0}
               <span class="season-stat" class:stat-complete={group.matchedCount === group.totalCount} class:stat-partial={group.matchedCount !== group.totalCount}>
@@ -235,9 +452,33 @@
         {#each group.rows as row, i}
           {#if row.type === 'matched'}
             {@const tooltipKey = `${group.label}-${i}`}
-            <tr class:deselected={!selected[row.index]}>
+            {@const rowStatus = reorderStatus.get(row.match.mediaFile.filePath)}
+            <tr class:deselected={!selected[row.index]} class:user-moved={rowStatus === 'moved'} class:user-displaced={rowStatus === 'displaced'}>
               <td class="col-check">
                 <input type="checkbox" bind:checked={selected[row.index]} />
+              </td>
+              <td class="col-reorder">
+                {#if !row.isMultiEp && group.movableCount > 1}
+                  <div class="reorder-btns">
+                    <button
+                      class="reorder-btn"
+                      disabled={row.filePos <= 0}
+                      onclick={() => moveFile(group.label, row.filePos, row.filePos - 1)}
+                      title="Move file up"
+                    >&#9650;</button>
+                    <button
+                      class="reorder-btn"
+                      disabled={row.filePos >= group.movableCount - 1}
+                      onclick={() => moveFile(group.label, row.filePos, row.filePos + 1)}
+                      title="Move file down"
+                    >&#9660;</button>
+                  </div>
+                {:else if row.isMultiEp}
+                  <div class="reorder-btns">
+                    <button class="reorder-btn" disabled title="Multi-episode file (locked)">&#9650;</button>
+                    <button class="reorder-btn" disabled title="Multi-episode file (locked)">&#9660;</button>
+                  </div>
+                {/if}
               </td>
               <td class="col-wrap">{relativePath(row.match.mediaFile.filePath)}</td>
               <td class="col-fixed col-dim">{formatSize(row.match.mediaFile.sizeBytes)}</td>
@@ -273,6 +514,7 @@
           {:else}
             <tr class="missing-episode">
               <td class="col-check"></td>
+              <td class="col-reorder"></td>
               <td class="col-wrap missing-label"><span class="missing-badge">missing</span></td>
               <td class="col-fixed col-dim">--</td>
               <td class="col-fixed col-dim">--</td>
@@ -431,6 +673,64 @@
     width: 32px;
     text-align: center;
     vertical-align: middle;
+  }
+
+  .col-reorder {
+    width: 32px;
+    text-align: center;
+    vertical-align: middle;
+    padding: 4px 2px;
+  }
+
+  .reorder-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: center;
+  }
+
+  .reorder-btn {
+    background: transparent;
+    border: 1px solid #2a2a4a;
+    color: #00d4ff;
+    font-size: 0.6rem;
+    line-height: 1;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 3px;
+    width: 22px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .reorder-btn:hover:not(:disabled) {
+    background: #00d4ff22;
+    border-color: #00d4ff;
+  }
+
+  .reorder-btn:disabled {
+    color: #444;
+    border-color: #1a1a3a;
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  tr.user-moved > td {
+    background: rgba(0, 212, 255, 0.08);
+  }
+
+  tr.user-moved > td:first-child {
+    border-left: 3px solid #00d4ff;
+  }
+
+  tr.user-displaced > td {
+    background: rgba(255, 179, 0, 0.06);
+  }
+
+  tr.user-displaced > td:first-child {
+    border-left: 3px solid #ffb30066;
   }
 
   .col-arrow {

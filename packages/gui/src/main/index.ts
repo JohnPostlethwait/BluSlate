@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable } from '@mediafetch/core';
+import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable, renderTemplate, getTemplate, MediaType } from '@mediafetch/core';
 
 // Packaged macOS .app bundles inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
 // that doesn't include Homebrew paths where ffprobe typically lives.
@@ -248,6 +248,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('settings:getRecentDirectories', () => {
     return currentSettings.recentDirectories;
   });
+
+  // Regenerate filenames after user reorder (uses core's renderTemplate + sanitizeFilename)
+  ipcMain.handle(
+    'reorder:regenerateFilenames',
+    (_event, items: Array<{ tmdbMatch: Record<string, unknown>; extension: string }>) => {
+      if (!Array.isArray(items)) return [];
+      const template = getTemplate(MediaType.TV);
+      return items.map((item) => {
+        if (!item.tmdbMatch) return '';
+        const tmdbMatch = item.tmdbMatch as Parameters<typeof renderTemplate>[1];
+        return renderTemplate(template, tmdbMatch, item.extension);
+      });
+    },
+  );
 
   // Run the rename pipeline (with full input validation)
   let pipelineRunning = false;

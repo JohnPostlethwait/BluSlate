@@ -130,6 +130,11 @@ const api = {
     return () => ipcRenderer.removeListener('menu:openDirectory', handler);
   },
 
+  // Regenerate filenames after user reorder
+  regenerateFilenames: (
+    items: Array<{ tmdbMatch: Record<string, unknown>; extension: string }>,
+  ): Promise<string[]> => ipcRenderer.invoke('reorder:regenerateFilenames', items),
+
   // ffprobe availability
   checkFfprobe: (): Promise<boolean> => ipcRenderer.invoke('ffprobe:check'),
 

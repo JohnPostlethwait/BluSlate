@@ -34,10 +34,38 @@ describe('sanitizeFilename', () => {
     expect(sanitizeFilename('...')).toBe('unnamed');
   });
 
-  it('should handle forward slashes on unix', () => {
-    // Forward slash is always removed
+  it('should handle forward slashes', () => {
     const result = sanitizeFilename('path/to/file');
     expect(result).not.toContain('/');
+  });
+
+  it('should replace colons with dash for readability', () => {
+    expect(sanitizeFilename('Star Trek: The Next Generation')).toBe('Star Trek - The Next Generation');
+  });
+
+  it('should handle multiple colons', () => {
+    expect(sanitizeFilename('A: B: C')).toBe('A - B - C');
+  });
+
+  it('should handle colon at start', () => {
+    const result = sanitizeFilename(':filename');
+    expect(result).not.toContain(':');
+    expect(result).toBe('-filename');
+  });
+
+  it('should handle colon at end', () => {
+    const result = sanitizeFilename('filename:');
+    expect(result).not.toContain(':');
+  });
+
+  it('should strip Windows-illegal characters on all platforms', () => {
+    const result = sanitizeFilename('file<>name"with|bad?chars*');
+    expect(result).toBe('filenamewithbadchars');
+  });
+
+  it('should strip backslashes on all platforms', () => {
+    const result = sanitizeFilename('path\\to\\file');
+    expect(result).toBe('pathtofile');
   });
 
   it('should truncate long filenames', () => {

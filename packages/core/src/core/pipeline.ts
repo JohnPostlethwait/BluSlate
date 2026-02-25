@@ -288,8 +288,9 @@ async function runBatchPipeline(
     if (!show) continue; // Show wasn't identified — skip DVDCompare
 
     try {
-      ui.progress.start(`Searching DVDCompare for "${showName}"...`);
-      const searchResults = await searchDvdCompare(showName);
+      const dvdSearchName = show.showName;
+      ui.progress.start(`Searching DVDCompare for "${dvdSearchName}"...`);
+      const searchResults = await searchDvdCompare(dvdSearchName);
 
       if (searchResults.length > 0) {
         ui.progress.succeed(
@@ -297,7 +298,7 @@ async function runBatchPipeline(
         );
 
         // Let the user select one or more DVDCompare results
-        const selectedResults = await ui.prompts.confirmDvdCompareSelection(showName, searchResults);
+        const selectedResults = await ui.prompts.confirmDvdCompareSelection(dvdSearchName, searchResults);
 
         if (selectedResults.length > 0) {
           // Fetch disc data from all selected results and merge
@@ -343,22 +344,29 @@ async function runBatchPipeline(
     }
   }
 
-  // ── Phase 4: Probe all files with ffprobe (unified progress) ──
+  // ── Phase 4: Probe all files with ffprobe (parallel, unified progress) ──
+  const PROBE_CONCURRENCY = 8;
   const totalFiles = Array.from(seasonGroups.values()).reduce((sum, g) => sum + g.files.length, 0);
   let probed = 0;
   ui.progress.start(`[0/${totalFiles}] Probing files...`);
 
-  for (const [, group] of seasonGroups) {
-    for (const file of group.files) {
+  const allFiles = Array.from(seasonGroups.values()).flatMap((group) =>
+    group.files.map((file) => ({ file, group })),
+  );
+
+  for (let i = 0; i < allFiles.length; i += PROBE_CONCURRENCY) {
+    const batch = allFiles.slice(i, i + PROBE_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(({ file }) => probeFile(file.filePath)),
+    );
+    for (let j = 0; j < batch.length; j++) {
       probed++;
-      ui.progress.update(`[${probed}/${totalFiles}] Probing: ${file.fileName}`);
-      try {
-        const probeData = await probeFile(file.filePath);
-        if (probeData) {
-          group.probeResults.set(file.filePath, probeData);
-        }
-      } catch (err) {
-        logger.warn(`Failed to probe ${file.fileName}: ${err}`);
+      ui.progress.update(`[${probed}/${totalFiles}] Probing files...`);
+      const result = results[j];
+      if (result.status === 'fulfilled' && result.value) {
+        batch[j].group.probeResults.set(batch[j].file.filePath, result.value);
+      } else if (result.status === 'rejected') {
+        logger.warn(`Failed to probe ${batch[j].file.fileName}: ${result.reason}`);
       }
     }
   }

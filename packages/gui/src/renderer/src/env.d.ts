@@ -29,6 +29,7 @@ interface Window {
     onPipelineComplete: (callback: (data: { success: boolean }) => void) => () => void;
     onPipelineError: (callback: (data: { message: string }) => void) => () => void;
     onMenuOpenDirectory: (callback: (directory: string) => void) => () => void;
+    regenerateFilenames: (items: Array<{ tmdbMatch: MatchResultData['tmdbMatch']; extension: string }>) => Promise<string[]>;
     checkFfprobe: () => Promise<boolean>;
     loadSettings: () => Promise<{ apiKey?: string; recentDirectories: string[] }>;
     saveApiKey: (apiKey: string) => Promise<void>;

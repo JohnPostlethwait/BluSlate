@@ -15,6 +15,7 @@
   let dryRun = $state(false);
   let isDragOver = $state(false);
   let ffprobeAvailable = $state<boolean | null>(null);
+  let tipsOpen = $state(false);
 
   onMount(async () => {
     try {
@@ -139,6 +140,23 @@
       <input type="checkbox" bind:checked={dryRun} />
       <span>Dry run (preview only)</span>
     </label>
+  </div>
+
+  <div class="tips-box">
+    <button class="tips-toggle" onclick={() => (tipsOpen = !tipsOpen)}>
+      <span class="tips-chevron" class:open={tipsOpen}>&#9654;</span>
+      Tips for Better Matches
+    </button>
+    {#if tipsOpen}
+      <ul class="tips-list">
+        <li><strong>Season folders should have clear naming</strong> (S1, or Season 1) — MediaFetch uses folder structure to determine episode seasons. Often the disks themselves contain adequate naming.</li>
+        <li><strong>Remove "Play All" tracks</strong> — Long concatenated files consume episode slots and confuse the matcher.</li>
+        <li><strong>Delete extras and duplicates</strong> — Bonus content and duplicate quality rips take episode positions from real episodes.</li>
+        <li><strong>TMDb Show Identification</strong> — Edit the search on the TMDb screen if the folder name doesn't result in a match. This name is also used to search DVDCompare.</li>
+        <li><strong>Select a DVDCompare release</strong> — DVDCompare is the only source for to-the-second episode runtime information which dramatically improves matching accuracy.</li>
+        <li><strong>Review and reorder</strong> — Check confidence scores and use the arrow buttons to fix any mismatches before confirming. It's best to spot-check the matches just to ensure there was no strange ordering from the disks.</li>
+      </ul>
+    {/if}
   </div>
 
   <button
@@ -290,6 +308,64 @@
 
   .checkbox-label input[type='checkbox'] {
     accent-color: #00d4ff;
+  }
+
+  .tips-box {
+    margin-bottom: 24px;
+    border: 1px solid #2a2a4a;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .tips-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #0f0f23;
+    border: none;
+    color: #888;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .tips-toggle:hover {
+    color: #ccc;
+  }
+
+  .tips-chevron {
+    font-size: 0.6rem;
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+
+  .tips-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  .tips-list {
+    margin: 0;
+    padding: 12px 16px 12px 32px;
+    background: #0d1a30;
+    list-style: disc;
+  }
+
+  .tips-list li {
+    color: #999;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+
+  .tips-list li:last-child {
+    margin-bottom: 0;
+  }
+
+  .tips-list strong {
+    color: #ccc;
   }
 
   .btn-start {

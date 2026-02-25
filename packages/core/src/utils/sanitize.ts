@@ -1,5 +1,5 @@
-const WINDOWS_ILLEGAL = /[<>:"/\\|?*\x00-\x1f]/g;
-const UNIX_ILLEGAL = /[/\x00-\x1f]/g;
+// Universal: union of all illegal/problematic chars across Windows, macOS, and Linux
+const ILLEGAL_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
 const CONSECUTIVE_SPACES = /\s{2,}/g;
 const TRAILING_DOTS_SPACES = /[.\s]+$/;
 const LEADING_DOTS_SPACES = /^[.\s]+/;
@@ -19,12 +19,10 @@ export function sanitizeFilename(name: string): string {
     name = name.replace(/\0/g, '');
   }
 
-  const isWindows = process.platform === 'win32';
-  const pattern = isWindows ? WINDOWS_ILLEGAL : UNIX_ILLEGAL;
-
   let sanitized = name
     .normalize('NFC')
-    .replace(pattern, '')
+    .replace(/:/g, ' -')
+    .replace(ILLEGAL_CHARS, '')
     .replace(CONSECUTIVE_SPACES, ' ')
     .replace(TRAILING_DOTS_SPACES, '')
     .replace(LEADING_DOTS_SPACES, '')
@@ -40,7 +38,7 @@ export function sanitizeFilename(name: string): string {
 
   // On Windows, prefix reserved device names to prevent filesystem issues.
   // Check the base name (without extension) against reserved names.
-  if (isWindows) {
+  if (process.platform === 'win32') {
     const dotIndex = sanitized.indexOf('.');
     const baseName = dotIndex >= 0 ? sanitized.substring(0, dotIndex) : sanitized;
     if (WINDOWS_RESERVED.test(baseName.trim())) {
