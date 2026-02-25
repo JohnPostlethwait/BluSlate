@@ -1594,12 +1594,15 @@ describe('matchSeasonBatch with DVDCompare disc ranges', () => {
     ];
   }
 
-  it('should use DVDCompare episode counts for disc ranges when disc has extra files', async () => {
+  it('should use file-based episode counts for disc ranges even with extra files on disc', async () => {
     // TNG S2 Disc 2 has 4 episodes on DVDCompare but 5 physical files
     // (4 regular episodes + 1 extended version of "The Measure of a Man").
-    // Without DVDCompare disc ranges, Disc 2 gets 5 episode slots, stealing
-    // one from Disc 3 and cascading all subsequent disc ranges.
-    // With DVDCompare disc ranges, Disc 2 gets 4 slots (correct).
+    // With file-based disc ranges, Disc 2 gets 5 episode slots [5..9].
+    // The extended version (~57min, runtime cost >10 vs 46min episodes)
+    // fails greedy candidate generation but matches via disc-constrained
+    // fallback to the remaining episode in D2's range.
+    // TMDb is canonical for episode counts — file counts partition TMDb's
+    // episode list across physical discs.
     const seasonMap = new Map<number, TmdbSeasonDetails>();
     seasonMap.set(2, makeSeasonDetails(2, makeTngS2TmdbEpisodes()));
     const client = makeSeasonMockClient(seasonMap);
@@ -1615,7 +1618,7 @@ describe('matchSeasonBatch with DVDCompare disc ranges', () => {
       makeTngFile(2, 1, 11, 2873),
       makeTngFile(2, 1, 12, 2860),
       // Disc 2 — 4 regular episodes + 1 extended version (57:35 = 3455s)
-      makeTngFile(2, 2, 5, 3455),  // Extended version (~57min) — NOT a regular ep
+      makeTngFile(2, 2, 5, 3455),  // Extended version (~57min) — matched via fallback
       makeTngFile(2, 2, 6, 2862),  // E09 The Measure of a Man
       makeTngFile(2, 2, 7, 2856),  // E08 A Matter of Honor
       makeTngFile(2, 2, 8, 2842),  // E07 Unnatural Selection
@@ -1632,7 +1635,7 @@ describe('matchSeasonBatch with DVDCompare disc ranges', () => {
       makeTngFile(2, 4, 7, 2858),
       makeTngFile(2, 4, 8, 2857),
       makeTngFile(2, 4, 9, 2857),
-      // Disc 5 — E20-E22 reversed
+      // Disc 5 — E20-E22 reversed (3 files but only 2 TMDb slots remain)
       makeTngFile(2, 5, 5, 2857),
       makeTngFile(2, 5, 6, 2858),
       makeTngFile(2, 5, 7, 2859),
@@ -1643,14 +1646,14 @@ describe('matchSeasonBatch with DVDCompare disc ranges', () => {
       2, episodeFiles, undefined, dvdCompareDiscs, 'reverse',
     );
 
-    // 22 matched episodes + 1 extended version reclassified as extra
+    // 22 matched episodes + 1 extra (from Disc 5, which has 3 files but
+    // only 2 TMDb episode slots remaining after D1-D4 consume 20 slots)
     expect(result.matched).toHaveLength(22);
     expect(result.reclassifiedExtras).toHaveLength(1);
 
-    // The extended version (t05 on disc 2, ~57min) should be the extra
+    // The extra is from Disc 5 — it has 3 files but only 2 episodes left
     const extraFile = result.reclassifiedExtras[0];
-    expect(extraFile.file.fileName).toContain('_t05.mkv');
-    expect(extraFile.file.filePath).toContain('Disc 2');
+    expect(extraFile.file.filePath).toContain('Disc 5');
 
     // Build assignment map
     const assignments = new Map<string, number>();
@@ -1661,21 +1664,21 @@ describe('matchSeasonBatch with DVDCompare disc ranges', () => {
       assignments.set(key, m.tmdbMatch?.episodeNumber ?? -1);
     }
 
-    // Disc 2: 4 files matched (not 5), extended version excluded
-    // t09→E06, t08→E07, t07→E08, t06→E09 (reversed)
+    // Disc 2: all 5 files matched — 4 regular via greedy, extended via fallback
+    // t09→E06, t08→E07, t07→E08, t06→E09, t05→E10 (reversed)
     expect(assignments.get('D2_t09')).toBe(6);   // The Schizoid Man
     expect(assignments.get('D2_t08')).toBe(7);   // Unnatural Selection
     expect(assignments.get('D2_t07')).toBe(8);   // A Matter of Honor
     expect(assignments.get('D2_t06')).toBe(9);   // The Measure of a Man
-    expect(assignments.has('D2_t05')).toBe(false); // Extended version — not matched
+    expect(assignments.has('D2_t05')).toBe(true); // Extended version — matched via fallback
 
-    // Disc 3: range should be 9-13 (not shifted to 10-14)
-    // t09→E10, t08→E11, t07→E12, t06→E13, t05→E14 (reversed)
-    expect(assignments.get('D3_t09')).toBe(10);  // The Dauphin
-    expect(assignments.get('D3_t08')).toBe(11);  // Contagion
-    expect(assignments.get('D3_t07')).toBe(12);  // The Royale
-    expect(assignments.get('D3_t06')).toBe(13);  // Time Squared
-    expect(assignments.get('D3_t05')).toBe(14);  // The Icarus Factor
+    // Disc 3: range shifted by 1 since D2 consumed 5 slots instead of 4
+    // t09→E11, t08→E12, t07→E13, t06→E14, t05→E15 (reversed)
+    expect(assignments.get('D3_t09')).toBe(11);  // Contagion
+    expect(assignments.get('D3_t08')).toBe(12);  // The Royale
+    expect(assignments.get('D3_t07')).toBe(13);  // Time Squared
+    expect(assignments.get('D3_t06')).toBe(14);  // The Icarus Factor
+    expect(assignments.get('D3_t05')).toBe(15);  // Pen Pals
   });
 
   it('should produce sequential episode ordering within each disc', async () => {

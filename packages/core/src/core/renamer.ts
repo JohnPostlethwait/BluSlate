@@ -59,6 +59,66 @@ export async function executeRenames(
   return renames;
 }
 
+export async function undoRenames(
+  directory: string,
+): Promise<{ restored: number; failed: number }> {
+  const logPath = path.join(directory, '.mediafetch-log.json');
+  let logData: RenameLog;
+
+  try {
+    const raw = await fs.readFile(logPath, 'utf-8');
+    logData = JSON.parse(raw);
+  } catch (err) {
+    logger.error(`Could not read rename log: ${err}`);
+    return { restored: 0, failed: 0 };
+  }
+
+  if (!logData?.renames?.length) {
+    logger.warn('Rename log is empty or invalid');
+    return { restored: 0, failed: 0 };
+  }
+
+  let restored = 0;
+  let failed = 0;
+
+  for (const entry of logData.renames) {
+    const currentPath = path.join(directory, entry.to);
+    const originalPath = path.join(directory, entry.from);
+
+    // Defense-in-depth: verify paths stay within directory
+    const resolvedDir = path.resolve(directory);
+    if (
+      !path.resolve(currentPath).startsWith(resolvedDir + path.sep) ||
+      !path.resolve(originalPath).startsWith(resolvedDir + path.sep)
+    ) {
+      logger.error(`Skipping undo for "${entry.to}": path would escape directory`);
+      failed++;
+      continue;
+    }
+
+    try {
+      await safeRename(currentPath, originalPath);
+      logger.rename(`[UNDO] ${entry.to} -> ${entry.from}`);
+      restored++;
+    } catch (err) {
+      logger.error(`Failed to undo "${entry.to}": ${err}`);
+      failed++;
+    }
+  }
+
+  // Clean up log file if all renames were restored
+  if (failed === 0) {
+    try {
+      await fs.unlink(logPath);
+      logger.info(`Removed rename log: ${logPath}`);
+    } catch (err) {
+      logger.warn(`Could not remove rename log: ${err}`);
+    }
+  }
+
+  return { restored, failed };
+}
+
 export async function writeRenameLog(
   directory: string,
   renames: RenameEntry[],

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable, renderTemplate, getTemplate, MediaType } from '@mediafetch/core';
+import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable, renderTemplate, getTemplate, MediaType, undoRenames } from '@mediafetch/core';
 
 // Packaged macOS .app bundles inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
 // that doesn't include Homebrew paths where ffprobe typically lives.
@@ -262,6 +262,14 @@ app.whenReady().then(async () => {
       });
     },
   );
+
+  // Undo renames using the .mediafetch-log.json file
+  ipcMain.handle('undo:execute', (_event, directory: string) => {
+    if (!directory || typeof directory !== 'string') {
+      return { restored: 0, failed: 0 };
+    }
+    return undoRenames(directory);
+  });
 
   // Run the rename pipeline (with full input validation)
   let pipelineRunning = false;

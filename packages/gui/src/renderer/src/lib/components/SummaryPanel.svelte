@@ -14,6 +14,18 @@
   let { renamed, skipped, failed, dryRun, matches = [], scanDirectory = '', onreset }: Props = $props();
 
   let total = $derived(renamed + skipped + failed);
+  let undoState = $state<'idle' | 'confirming' | 'working' | 'done' | 'error'>('idle');
+  let undoResult = $state<{ restored: number; failed: number } | null>(null);
+
+  async function executeUndo() {
+    undoState = 'working';
+    try {
+      undoResult = await window.api.undoRenames(scanDirectory);
+      undoState = 'done';
+    } catch {
+      undoState = 'error';
+    }
+  }
 </script>
 
 <div class="summary-panel">
@@ -62,11 +74,34 @@
     <p class="note">No files were actually renamed. Run again without "Dry Run" to apply changes.</p>
   {/if}
 
-  <div style="display: flex; justify-content: center; margin-top: 20px;">
-    <button
-      style="background: #00d4ff; border: none; color: #0a0a1a; padding: 12px 32px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;"
-      onclick={onreset}
-    >Start New Scan</button>
+  {#if !dryRun && renamed > 0 && undoState !== 'idle'}
+    <div class="undo-section">
+      {#if undoState === 'confirming'}
+        <p class="undo-confirm-text">Are you sure? This will restore all original filenames.</p>
+        <div class="undo-confirm-btns">
+          <button class="btn-undo-confirm" onclick={executeUndo}>Yes, Undo Renames</button>
+          <button class="btn-undo-cancel" onclick={() => (undoState = 'idle')}>Cancel</button>
+        </div>
+      {:else if undoState === 'working'}
+        <p class="undo-working">Restoring original filenames...</p>
+      {:else if undoState === 'done' && undoResult}
+        <p class="undo-done">
+          Restored {undoResult.restored} file{undoResult.restored !== 1 ? 's' : ''}
+          {#if undoResult.failed > 0}
+            &middot; {undoResult.failed} failed
+          {/if}
+        </p>
+      {:else if undoState === 'error'}
+        <p class="undo-error">Failed to undo renames. The log file may be missing or unreadable.</p>
+      {/if}
+    </div>
+  {/if}
+
+  <div class="actions">
+    {#if !dryRun && renamed > 0 && undoState === 'idle'}
+      <button class="btn-undo" onclick={() => (undoState = 'confirming')}>Undo Renames</button>
+    {/if}
+    <button class="btn-start-new" onclick={onreset}>Start New Scan</button>
   </div>
 </div>
 
@@ -168,6 +203,112 @@
     color: #888;
     font-size: 0.9rem;
     margin: 0 0 24px;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .btn-start-new {
+    background: #00d4ff;
+    border: none;
+    color: #0a0a1a;
+    padding: 12px 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .btn-start-new:hover {
+    opacity: 0.9;
+  }
+
+  .btn-undo {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  .btn-undo:hover {
+    border-color: #888;
+    color: #ccc;
+  }
+
+  .undo-section {
+    margin-top: 16px;
+    padding: 16px;
+    background: #0d1a30;
+    border: 1px solid #2a2a4a;
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .undo-confirm-text {
+    color: #ffb300;
+    font-size: 0.9rem;
+    margin: 0 0 12px;
+  }
+
+  .undo-confirm-btns {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .btn-undo-confirm {
+    background: #ff4444;
+    border: none;
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .btn-undo-confirm:hover {
+    opacity: 0.9;
+  }
+
+  .btn-undo-cancel {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .btn-undo-cancel:hover {
+    border-color: #888;
+    color: #ccc;
+  }
+
+  .undo-working {
+    color: #00d4ff;
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .undo-done {
+    color: #4caf50;
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .undo-error {
+    color: #ff4444;
+    font-size: 0.9rem;
+    margin: 0;
   }
 
 </style>

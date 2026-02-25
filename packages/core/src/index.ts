@@ -29,7 +29,7 @@ export { scanDirectory } from './core/scanner.js';
 export { probeFile, setFfprobePath, isFfprobeAvailable } from './core/prober.js';
 
 // Renamer
-export { executeRenames, writeRenameLog } from './core/renamer.js';
+export { executeRenames, writeRenameLog, undoRenames } from './core/renamer.js';
 
 // API
 export { TmdbClient } from './api/tmdb-client.js';

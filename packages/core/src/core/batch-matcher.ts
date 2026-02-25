@@ -304,39 +304,14 @@ export async function matchSeasonBatch(
   const discEpRanges = new Map<number, { startEp: number; endEp: number }>();
 
   {
-    // When DVDCompare data is available, derive per-disc episode counts from
-    // the unified refs that ACTUALLY MATCHED this season's TMDb episodes.
-    // This avoids disc number overlap between seasons: when the user selects
-    // both S1 and S2 Blu-ray releases, both have D1-D5, but only the episodes
-    // matching this season's TMDb titles are relevant. Using raw DVDCompare
-    // disc counts would let S2's D2 (4 eps) overwrite S1's D2 (5 eps).
+    // TMDb is canonical for episode counts, names, and order. The number
+    // of episode-classified files per disc partitions TMDb's episode list
+    // across physical discs. DVDCompare augments with sub-second runtimes
+    // for matching cost but does not determine episode counts per disc.
     const discEpCounts = new Map<number, number>();
-
-    // Count matched DVDCompare episodes per disc from unified refs
-    const matchedDiscCounts = new Map<number, number>();
-    for (const ref of unifiedRefs) {
-      if (ref.dvdCompareDiscNumber !== undefined) {
-        matchedDiscCounts.set(
-          ref.dvdCompareDiscNumber,
-          (matchedDiscCounts.get(ref.dvdCompareDiscNumber) ?? 0) + 1,
-        );
-      }
-    }
-
-    if (matchedDiscCounts.size > 0) {
-      for (const [disc, count] of matchedDiscCounts) {
-        discEpCounts.set(disc, count);
-      }
-      logger.batch(
-        `Using DVDCompare matched episode counts for disc ranges: ` +
-        [...discEpCounts.entries()].sort((a, b) => a[0] - b[0])
-          .map(([d, c]) => `D${d}:${c}eps`).join(', '),
-      );
-    } else {
-      for (const file of episodeFiles) {
-        const disc = parseDiscFromPath(file.file.filePath) ?? 0;
-        discEpCounts.set(disc, (discEpCounts.get(disc) ?? 0) + 1);
-      }
+    for (const file of episodeFiles) {
+      const disc = parseDiscFromPath(file.file.filePath) ?? 0;
+      discEpCounts.set(disc, (discEpCounts.get(disc) ?? 0) + 1);
     }
 
     const sortedDiscs = [...discEpCounts.entries()].sort((a, b) => a[0] - b[0]);
@@ -804,19 +779,15 @@ export async function matchSeasonBatch(
   // ── Fallback: fill remaining episode slots before sending to extras ──
   // Files may have failed candidate generation due to disc range constraints
   // or the runtimeCost > 10 guard. If they have reasonable episode-length
-  // runtimes AND there are still unfilled TMDb episode slots, match by
-  // position rather than relegating to the specials pool.
+  // runtimes AND there are still unfilled TMDb episode slots within the same
+  // disc range, match by position rather than relegating to the specials pool.
   {
     const unassignedFileIndices: number[] = [];
     for (let fi = 0; fi < episodeFiles.length; fi++) {
       if (!assignedFiles.has(fi)) unassignedFileIndices.push(fi);
     }
 
-    const fallbackEps = unifiedRefs
-      .filter(({ tmdbIdx }) => !assignedEps.has(tmdbIdx))
-      .sort((a, b) => a.tmdbIdx - b.tmdbIdx);
-
-    if (unassignedFileIndices.length > 0 && fallbackEps.length > 0) {
+    if (unassignedFileIndices.length > 0) {
       // Compute median episode runtime for sanity check
       const epRuntimes = tmdbEpisodes
         .filter(ep => ep.runtime !== null && ep.runtime !== undefined && ep.runtime > 0)
@@ -826,10 +797,7 @@ export async function matchSeasonBatch(
         ? sortedRuntimes[Math.floor(sortedRuntimes.length / 2)]
         : undefined;
 
-      let fbEpCursor = 0;
       for (const fi of unassignedFileIndices) {
-        if (fbEpCursor >= fallbackEps.length) break;
-
         const file = episodeFiles[fi];
         const fileDurationMin = file.probeData?.durationSeconds !== undefined
           ? file.probeData.durationSeconds / 60
@@ -844,12 +812,25 @@ export async function matchSeasonBatch(
           }
         }
 
-        const ref = fallbackEps[fbEpCursor];
+        // Disc range constraint: only match to episodes within this file's disc
+        const fbDiscNum = parseDiscFromPath(file.file.filePath);
+        const fbRange = fbDiscNum !== undefined ? discEpRanges.get(fbDiscNum) : undefined;
+
+        // Find the first unassigned episode within this file's disc range
+        let bestRef: UnifiedEpisodeRef | undefined;
+        for (const ref of unifiedRefs) {
+          if (assignedEps.has(ref.tmdbIdx)) continue;
+          if (fbRange && (ref.tmdbIdx < fbRange.startEp || ref.tmdbIdx > fbRange.endEp)) continue;
+          bestRef = ref;
+          break;
+        }
+        if (!bestRef) continue;
+
+        const ref = bestRef;
         const ep = ref.tmdbEpisode;
 
         assignedFiles.add(fi);
         assignedEps.add(ref.tmdbIdx);
-        fbEpCursor++;
 
         const fbFilePos = fi / Math.max(1, episodeFiles.length - 1);
         const fbEpPos = ref.tmdbIdx / Math.max(1, tmdbEpisodes.length - 1);
@@ -892,7 +873,7 @@ export async function matchSeasonBatch(
         logger.batch(
           `Fallback match: ${file.file.fileName} → ` +
           `S${String(season).padStart(2, '0')}E${String(ep.episode_number).padStart(2, '0')}` +
-          ` "${ep.name}" (positional, episode slots unfilled)`,
+          ` "${ep.name}" (positional, disc-constrained fallback)`,
         );
       }
     }

@@ -135,6 +135,10 @@ const api = {
     items: Array<{ tmdbMatch: Record<string, unknown>; extension: string }>,
   ): Promise<string[]> => ipcRenderer.invoke('reorder:regenerateFilenames', items),
 
+  // Undo renames
+  undoRenames: (directory: string): Promise<{ restored: number; failed: number }> =>
+    ipcRenderer.invoke('undo:execute', directory),
+
   // ffprobe availability
   checkFfprobe: (): Promise<boolean> => ipcRenderer.invoke('ffprobe:check'),
 
