@@ -13,6 +13,7 @@ import type {
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export class TmdbClient {
   private readonly apiKey: string;
@@ -46,12 +47,19 @@ export class TmdbClient {
 
       let response: Response;
       try {
-        response = await fetch(url.toString(), {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Accept': 'application/json',
-          },
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+          response = await fetch(url.toString(), {
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Accept': 'application/json',
+            },
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch (err) {
         // Sanitize network errors — they may contain the full URL with auth headers
         const safeMessage = err instanceof Error ? err.message : 'Unknown network error';

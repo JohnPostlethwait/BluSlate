@@ -96,9 +96,16 @@ function createWindow(): BrowserWindow {
   mainWindow.on('resized', saveBounds);
   mainWindow.on('moved', saveBounds);
 
-  // Open external links in the system browser
+  // Open external links in the system browser (allowlist safe URL schemes)
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    try {
+      const parsed = new URL(details.url);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        shell.openExternal(details.url);
+      }
+    } catch {
+      // Malformed URL — silently reject
+    }
     return { action: 'deny' };
   });
 

@@ -17,6 +17,7 @@ import { logger } from '../utils/logger.js';
 const BASE_URL = 'https://www.dvdcompare.net';
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const REQUEST_TIMEOUT_MS = 30_000;
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -132,34 +133,48 @@ async function decodeResponse(response: Response): Promise<string> {
 }
 
 async function fetchPage(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
-    redirect: 'follow',
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    throw new Error(`DVDCompare fetch failed: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`DVDCompare fetch failed: ${response.status} ${response.statusText}`);
+    }
+
+    return decodeResponse(response);
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return decodeResponse(response);
 }
 
 async function postSearch(query: string): Promise<string> {
-  const response = await fetch(`${BASE_URL}/comparisons/search.php`, {
-    method: 'POST',
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: `param=${encodeURIComponent(query)}&searchtype=text`,
-    redirect: 'follow',
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${BASE_URL}/comparisons/search.php`, {
+      method: 'POST',
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `param=${encodeURIComponent(query)}&searchtype=text`,
+      redirect: 'follow',
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    throw new Error(`DVDCompare search failed: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`DVDCompare search failed: ${response.status} ${response.statusText}`);
+    }
+
+    return decodeResponse(response);
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return decodeResponse(response);
 }
 
 // ── Parsers ──────────────────────────────────────────────────────────

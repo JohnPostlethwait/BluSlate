@@ -63,7 +63,7 @@ export async function undoRenames(
   directory: string,
 ): Promise<{ restored: number; failed: number }> {
   const logPath = path.join(directory, '.mediafetch-log.json');
-  let logData: RenameLog;
+  let logData: unknown;
 
   try {
     const raw = await fs.readFile(logPath, 'utf-8');
@@ -73,15 +73,36 @@ export async function undoRenames(
     return { restored: 0, failed: 0 };
   }
 
-  if (!logData?.renames?.length) {
+  // Validate schema: must have a renames array with {from: string, to: string} entries
+  const parsed = logData as Record<string, unknown>;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.renames) || parsed.renames.length === 0) {
     logger.warn('Rename log is empty or invalid');
     return { restored: 0, failed: 0 };
+  }
+
+  const validRenames = parsed.renames.filter(
+    (entry: unknown): entry is RenameEntry =>
+      entry !== null &&
+      typeof entry === 'object' &&
+      typeof (entry as Record<string, unknown>).from === 'string' &&
+      typeof (entry as Record<string, unknown>).to === 'string' &&
+      (entry as Record<string, unknown>).from !== '' &&
+      (entry as Record<string, unknown>).to !== '',
+  );
+
+  if (validRenames.length === 0) {
+    logger.warn('Rename log contains no valid entries');
+    return { restored: 0, failed: 0 };
+  }
+
+  if (validRenames.length < parsed.renames.length) {
+    logger.warn(`Skipping ${parsed.renames.length - validRenames.length} malformed entries in rename log`);
   }
 
   let restored = 0;
   let failed = 0;
 
-  for (const entry of logData.renames) {
+  for (const entry of validRenames) {
     const currentPath = path.join(directory, entry.to);
     const originalPath = path.join(directory, entry.from);
 
