@@ -5,16 +5,8 @@ vi.mock('../../packages/core/src/core/scanner.js', () => ({
   scanDirectory: vi.fn(),
 }));
 
-vi.mock('../../packages/core/src/core/parser.js', () => ({
-  parseFilename: vi.fn(),
-}));
-
 vi.mock('../../packages/core/src/core/prober.js', () => ({
   probeFile: vi.fn(),
-}));
-
-vi.mock('../../packages/core/src/core/matcher.js', () => ({
-  findMatch: vi.fn(),
 }));
 
 vi.mock('../../packages/core/src/core/renamer.js', () => ({
@@ -23,7 +15,6 @@ vi.mock('../../packages/core/src/core/renamer.js', () => ({
 }));
 
 vi.mock('../../packages/core/src/core/directory-parser.js', () => ({
-  shouldUseBatchMode: vi.fn(() => false),
   groupFilesBySeason: vi.fn(),
 }));
 
@@ -46,6 +37,11 @@ vi.mock('../../packages/core/src/api/tmdb-client.js', () => {
   };
 });
 
+vi.mock('../../packages/core/src/api/dvdcompare-client.js', () => ({
+  searchDvdCompare: vi.fn().mockResolvedValue([]),
+  fetchDiscEpisodeData: vi.fn(),
+}));
+
 vi.mock('../../packages/core/src/utils/logger.js', () => ({
   logger: {
     info: vi.fn(),
@@ -55,29 +51,29 @@ vi.mock('../../packages/core/src/utils/logger.js', () => ({
     scan: vi.fn(),
     rename: vi.fn(),
     tmdb: vi.fn(),
+    batch: vi.fn(),
   },
 }));
 
 import { runPipeline } from '../../packages/core/src/core/pipeline.js';
 import { scanDirectory } from '../../packages/core/src/core/scanner.js';
-import { parseFilename } from '../../packages/core/src/core/parser.js';
-import { probeFile } from '../../packages/core/src/core/prober.js';
-import { findMatch } from '../../packages/core/src/core/matcher.js';
 import { executeRenames, writeRenameLog } from '../../packages/core/src/core/renamer.js';
-import { shouldUseBatchMode } from '../../packages/core/src/core/directory-parser.js';
+import { groupFilesBySeason } from '../../packages/core/src/core/directory-parser.js';
+import { identifyShow, classifyAndSortFiles, matchSeasonBatch } from '../../packages/core/src/core/batch-matcher.js';
 import { MediaType } from '../../packages/core/src/types/media.js';
-import { FatalError, AuthenticationError } from '../../packages/core/src/errors.js';
+import { AuthenticationError } from '../../packages/core/src/errors.js';
 import type { AppConfig } from '../../packages/core/src/types/config.js';
 import type { UIAdapter } from '../../packages/core/src/types/ui-adapter.js';
+import type { MatchResult, SeasonGroup, DirectoryContext } from '../../packages/core/src/types/media.js';
 import { makeMediaFile } from '../fixtures/test-builders.js';
 
 const mockedScanDirectory = vi.mocked(scanDirectory);
-const mockedParseFilename = vi.mocked(parseFilename);
-const mockedProbeFile = vi.mocked(probeFile);
-const mockedFindMatch = vi.mocked(findMatch);
 const mockedExecuteRenames = vi.mocked(executeRenames);
 const mockedWriteRenameLog = vi.mocked(writeRenameLog);
-const mockedShouldUseBatchMode = vi.mocked(shouldUseBatchMode);
+const mockedGroupFilesBySeason = vi.mocked(groupFilesBySeason);
+const mockedIdentifyShow = vi.mocked(identifyShow);
+const mockedClassifyAndSortFiles = vi.mocked(classifyAndSortFiles);
+const mockedMatchSeasonBatch = vi.mocked(matchSeasonBatch);
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -115,10 +111,40 @@ function makeUIAdapter(): UIAdapter {
   };
 }
 
+function makeSeasonGroup(files: ReturnType<typeof makeMediaFile>[], showName = 'Test Show', season = 1): SeasonGroup {
+  const context: DirectoryContext = { showName, showNameSource: '/media', season };
+  return {
+    directoryContext: context,
+    files,
+    probeResults: new Map(),
+  };
+}
+
+/** Set up batch mocks to return a single matched result for one file */
+function setupBatchMocks(file: ReturnType<typeof makeMediaFile>, matchResult: MatchResult) {
+  const group = makeSeasonGroup([file]);
+  mockedGroupFilesBySeason.mockReturnValue(new Map([['Test Show::1', group]]));
+  mockedIdentifyShow.mockResolvedValue({
+    showId: 1,
+    showName: 'Test Show',
+    showYear: 2020,
+    episodeRunTime: [45],
+  });
+  mockedClassifyAndSortFiles.mockReturnValue([{
+    file,
+    classification: 'episode' as const,
+    durationMinutes: 45,
+    sortOrder: 1000,
+  }]);
+  mockedMatchSeasonBatch.mockResolvedValue({
+    matched: [matchResult],
+    reclassifiedExtras: [],
+  });
+}
+
 describe('runPipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedShouldUseBatchMode.mockReturnValue(false);
   });
 
   it('should scan directory and report file count', async () => {
@@ -138,9 +164,7 @@ describe('runPipeline', () => {
 
     await runPipeline(makeConfig(), ui);
 
-    // Should not call any processing steps
-    expect(mockedParseFilename).not.toHaveBeenCalled();
-    expect(mockedFindMatch).not.toHaveBeenCalled();
+    expect(mockedGroupFilesBySeason).not.toHaveBeenCalled();
     expect(ui.display.displayResults).not.toHaveBeenCalled();
   });
 
@@ -153,41 +177,18 @@ describe('runPipeline', () => {
     expect(mockedScanDirectory).toHaveBeenCalledWith('/media', true);
   });
 
-  it('should parse, probe, and match each file in per-file mode', async () => {
-    const file = makeMediaFile('Breaking.Bad.S01E01.mkv');
-    mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.TV, title: 'Breaking Bad', season: 1, episodeNumbers: [1] });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockResolvedValue({
-      mediaFile: file,
-      parsed: { mediaType: MediaType.TV, title: 'Breaking Bad', season: 1, episodeNumbers: [1] },
-      confidence: 95,
-      newFilename: 'Breaking Bad - S01E01 - Pilot.mkv',
-      status: 'matched',
-      tmdbMatch: { id: 1, name: 'Breaking Bad', mediaType: MediaType.TV, seasonNumber: 1, episodeNumber: 1, episodeTitle: 'Pilot' },
-    });
-
-    const ui = makeUIAdapter();
-    await runPipeline(makeConfig(), ui);
-
-    expect(mockedParseFilename).toHaveBeenCalledWith('Breaking.Bad.S01E01.mkv');
-    expect(mockedProbeFile).toHaveBeenCalledWith('/media/Breaking.Bad.S01E01.mkv');
-    expect(mockedFindMatch).toHaveBeenCalledOnce();
-    expect(ui.display.displayResults).toHaveBeenCalledOnce();
-  });
-
   it('should display dry run summary and skip rename', async () => {
     const file = makeMediaFile('old.mkv');
     mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Movie, title: 'Movie' });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockResolvedValue({
+
+    const matchResult: MatchResult = {
       mediaFile: file,
-      parsed: { mediaType: MediaType.Movie, title: 'Movie' },
+      parsed: { mediaType: MediaType.TV, title: 'Test Show' },
       confidence: 90,
-      newFilename: 'Movie (2020).mkv',
+      newFilename: 'Test Show - S01E01 - Pilot.mkv',
       status: 'matched',
-    });
+    };
+    setupBatchMocks(file, matchResult);
 
     const ui = makeUIAdapter();
     await runPipeline(makeConfig({ dryRun: true }), ui);
@@ -198,19 +199,17 @@ describe('runPipeline', () => {
 
   it('should confirm renames and execute them', async () => {
     const file = makeMediaFile('old.mkv');
-    const matchResult = {
-      mediaFile: file,
-      parsed: { mediaType: MediaType.Movie as MediaType, title: 'Movie' },
-      confidence: 90,
-      newFilename: 'Movie (2020).mkv',
-      status: 'matched' as const,
-    };
-
     mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Movie, title: 'Movie' });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockResolvedValue(matchResult);
-    mockedExecuteRenames.mockResolvedValue([{ from: 'old.mkv', to: 'Movie (2020).mkv' }]);
+
+    const matchResult: MatchResult = {
+      mediaFile: file,
+      parsed: { mediaType: MediaType.TV, title: 'Test Show' },
+      confidence: 90,
+      newFilename: 'Test Show - S01E01 - Pilot.mkv',
+      status: 'matched',
+    };
+    setupBatchMocks(file, matchResult);
+    mockedExecuteRenames.mockResolvedValue([{ from: 'old.mkv', to: 'Test Show - S01E01 - Pilot.mkv' }]);
     mockedWriteRenameLog.mockResolvedValue(undefined);
 
     const ui = makeUIAdapter();
@@ -227,30 +226,31 @@ describe('runPipeline', () => {
   it('should not rename when user cancels confirmation', async () => {
     const file = makeMediaFile('old.mkv');
     mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Movie, title: 'Movie' });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockResolvedValue({
+
+    const matchResult: MatchResult = {
       mediaFile: file,
-      parsed: { mediaType: MediaType.Movie, title: 'Movie' },
+      parsed: { mediaType: MediaType.TV, title: 'Test Show' },
       confidence: 90,
-      newFilename: 'Movie (2020).mkv',
+      newFilename: 'Test Show - S01E01 - Pilot.mkv',
       status: 'matched',
-    });
+    };
+    setupBatchMocks(file, matchResult);
 
     const ui = makeUIAdapter();
-    vi.mocked(ui.prompts.confirmRenames).mockResolvedValue([]); // User rejected all
+    vi.mocked(ui.prompts.confirmRenames).mockResolvedValue([]);
 
     await runPipeline(makeConfig(), ui);
 
     expect(mockedExecuteRenames).not.toHaveBeenCalled();
   });
 
-  it('should abort on FatalError during matching', async () => {
+  it('should abort on FatalError during batch matching', async () => {
     const file = makeMediaFile('test.mkv');
     mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Movie, title: 'Test' });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockRejectedValue(new AuthenticationError('Bad API key'));
+
+    const group = makeSeasonGroup([file]);
+    mockedGroupFilesBySeason.mockReturnValue(new Map([['Test Show::1', group]]));
+    mockedIdentifyShow.mockRejectedValue(new AuthenticationError('Bad API key'));
 
     const ui = makeUIAdapter();
 
@@ -258,102 +258,57 @@ describe('runPipeline', () => {
     expect(ui.progress.stop).toHaveBeenCalled();
   });
 
-  it('should handle non-fatal errors per file and continue', async () => {
-    const file1 = makeMediaFile('file1.mkv');
-    const file2 = makeMediaFile('file2.mkv');
-    mockedScanDirectory.mockResolvedValue([file1, file2]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Movie, title: 'Test' });
-    mockedProbeFile.mockResolvedValue(null);
-
-    // First file errors, second succeeds
-    mockedFindMatch
-      .mockRejectedValueOnce(new Error('Network timeout'))
-      .mockResolvedValueOnce({
-        mediaFile: file2,
-        parsed: { mediaType: MediaType.Movie, title: 'Test' },
-        confidence: 90,
-        newFilename: 'Test (2020).mkv',
-        status: 'matched',
-      });
-
-    const ui = makeUIAdapter();
-    await runPipeline(makeConfig(), ui);
-
-    // Should display results — first file unmatched (error), second matched
-    expect(ui.display.displayResults).toHaveBeenCalled();
-    const displayedMatches = vi.mocked(ui.display.displayResults).mock.calls[0][0];
-    expect(displayedMatches).toHaveLength(2);
-    expect(displayedMatches[0].status).toBe('unmatched'); // error fallback
-    expect(displayedMatches[1].status).toBe('matched');
-  });
-
-  it('should override media type when configured', async () => {
+  it('should attach warning messages to unmatched results when Phase 5 errors', async () => {
     const file = makeMediaFile('test.mkv');
     mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Unknown, title: 'Test' });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockResolvedValue({
-      mediaFile: file,
-      parsed: { mediaType: MediaType.TV, title: 'Test' },
-      confidence: 0,
-      newFilename: 'test.mkv',
-      status: 'unmatched',
+
+    const group = makeSeasonGroup([file]);
+    mockedGroupFilesBySeason.mockReturnValue(new Map([['Test Show::1', group]]));
+    mockedIdentifyShow.mockResolvedValue({
+      showId: 1,
+      showName: 'Test Show',
+      showYear: 2020,
+      episodeRunTime: [45],
+    });
+    // classifyAndSortFiles throws — simulating a Phase 5 error
+    mockedClassifyAndSortFiles.mockImplementation(() => {
+      throw new Error('TMDb API timeout');
     });
 
     const ui = makeUIAdapter();
-    await runPipeline(makeConfig({ mediaType: MediaType.TV }), ui);
-
-    // findMatch should have been called with TV-overridden parsed data
-    const parsedArg = mockedFindMatch.mock.calls[0][2];
-    expect(parsedArg.mediaType).toBe(MediaType.TV);
-  });
-
-  it('should enrich parsed data with probe results', async () => {
-    const file = makeMediaFile('episode.mkv');
-    mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Unknown, title: '' });
-    mockedProbeFile.mockResolvedValue({
-      durationMinutes: 45,
-      durationSeconds: 2700,
-      showName: 'Probed Show',
-      season: 2,
-      episode: 5,
-    });
-    mockedFindMatch.mockResolvedValue({
-      mediaFile: file,
-      parsed: { mediaType: MediaType.TV, title: 'Probed Show', season: 2, episodeNumbers: [5] },
-      confidence: 0,
-      newFilename: 'episode.mkv',
-      status: 'unmatched',
-    });
-
-    const ui = makeUIAdapter();
+    vi.mocked(ui.prompts.confirmRenames).mockResolvedValue([]);
     await runPipeline(makeConfig(), ui);
 
-    const parsedArg = mockedFindMatch.mock.calls[0][2];
-    expect(parsedArg.title).toBe('Probed Show');
-    expect(parsedArg.season).toBe(2);
-    expect(parsedArg.episodeNumbers).toEqual([5]);
-    expect(parsedArg.mediaType).toBe(MediaType.TV);
+    // The confirmRenames call should have received matches with warnings
+    const confirmCall = vi.mocked(ui.prompts.confirmRenames).mock.calls[0];
+    const matches = confirmCall[0] as MatchResult[];
+    expect(matches).toHaveLength(1);
+    expect(matches[0].status).toBe('unmatched');
+    expect(matches[0].warnings).toBeDefined();
+    expect(matches[0].warnings![0]).toContain('Matching failed');
+    expect(matches[0].warnings![0]).toContain('TMDb API timeout');
   });
 
-  it('should not rename when all files are already correctly named', async () => {
+  it('should show confirm dialog even when all files are already correctly named', async () => {
     const file = makeMediaFile('Already Correct.mkv');
     mockedScanDirectory.mockResolvedValue([file]);
-    mockedParseFilename.mockReturnValue({ mediaType: MediaType.Movie, title: 'Already Correct' });
-    mockedProbeFile.mockResolvedValue(null);
-    mockedFindMatch.mockResolvedValue({
+
+    const matchResult: MatchResult = {
       mediaFile: file,
-      parsed: { mediaType: MediaType.Movie, title: 'Already Correct' },
+      parsed: { mediaType: MediaType.TV, title: 'Test Show' },
       confidence: 95,
       newFilename: 'Already Correct.mkv', // Same as current filename
       status: 'matched',
-    });
+    };
+    setupBatchMocks(file, matchResult);
 
     const ui = makeUIAdapter();
+    // confirmRenames returns empty — user has nothing to rename
+    vi.mocked(ui.prompts.confirmRenames).mockResolvedValue([]);
     await runPipeline(makeConfig(), ui);
 
-    expect(ui.prompts.confirmRenames).not.toHaveBeenCalled();
+    // Confirm dialog is always shown so user can reorder/edit
+    expect(ui.prompts.confirmRenames).toHaveBeenCalled();
     expect(mockedExecuteRenames).not.toHaveBeenCalled();
   });
 });

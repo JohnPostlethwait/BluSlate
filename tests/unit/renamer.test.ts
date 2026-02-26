@@ -83,14 +83,17 @@ describe('executeRenames', () => {
     expect(mockedSafeRename).not.toHaveBeenCalled();
   });
 
-  it('should skip files where filename is already correct', async () => {
+  it('should count already-correct files as successful without renaming', async () => {
     const matches = [
       makeMatch({ fileName: 'Already Correct.mkv', newFilename: 'Already Correct.mkv' }),
     ];
 
     const result = await executeRenames(matches, false);
 
-    expect(result).toHaveLength(0);
+    // File counts as successfully processed but no filesystem rename happens
+    expect(result).toHaveLength(1);
+    expect(result[0].from).toBe('Already Correct.mkv');
+    expect(result[0].to).toBe('Already Correct.mkv');
     expect(mockedSafeRename).not.toHaveBeenCalled();
   });
 

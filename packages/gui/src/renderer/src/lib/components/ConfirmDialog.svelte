@@ -22,12 +22,12 @@
     return relPath(filePath, scanDirectory);
   }
 
-  // Split matches into renameable and non-renameable
+  // Split matches into actionable (matched/ambiguous) and unmatched
   let renameable = $derived(
-    matches.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName),
+    matches.filter((m) => m.status !== 'unmatched'),
   );
   let skipped = $derived(
-    matches.filter((m) => m.status === 'unmatched' || m.newFilename === m.mediaFile.fileName),
+    matches.filter((m) => m.status === 'unmatched'),
   );
 
   // Track selected state per renameable match
@@ -397,19 +397,19 @@
     <div class="warning-banner">
       <div class="warning-header">
         <span class="warning-icon">&#9888;</span>
-        <strong>Potential multi-episode files detected</strong>
+        <strong>Warnings</strong>
         <button class="dismiss-btn" onclick={() => (showWarningBanner = false)}>Dismiss</button>
       </div>
       <ul class="warning-list">
         {#each warningFiles as wf}
-          <li>{relativePath(wf.mediaFile.filePath)}</li>
+          <li>
+            <span class="warning-file">{relativePath(wf.mediaFile.filePath)}</span>
+            {#each wf.warnings ?? [] as warning}
+              <div class="warning-detail">{warning}</div>
+            {/each}
+          </li>
         {/each}
       </ul>
-      <p class="warning-note">
-        These files have significantly longer runtime or larger file size than typical episodes
-        in their group. They may be "Play All" tracks that concatenate multiple episodes.
-        Review carefully before renaming.
-      </p>
     </div>
   {/if}
 
@@ -554,11 +554,7 @@
             <td class="col-fixed col-dim">{formatSize(match.mediaFile.sizeBytes)}</td>
             <td class="col-fixed col-dim">{formatDuration(match.probeData)}</td>
             <td class="col-fixed">
-              {#if match.status === 'unmatched'}
-                <span class="reason-unmatched">unmatched</span>
-              {:else}
-                <span class="reason-unchanged">unchanged</span>
-              {/if}
+              <span class="reason-unmatched">unmatched</span>
             </td>
           </tr>
         {/each}
@@ -841,10 +837,6 @@
     font-size: 0.8rem;
   }
 
-  .reason-unchanged {
-    color: #888;
-    font-size: 0.8rem;
-  }
 
   .col-dim {
     color: #888;
@@ -941,13 +933,17 @@
   }
 
   .warning-list li {
-    margin: 2px 0;
+    margin: 4px 0;
   }
 
-  .warning-note {
-    margin: 0;
+  .warning-file {
+    color: #ccc;
+  }
+
+  .warning-detail {
     color: #999;
     font-size: 0.8rem;
     font-style: italic;
+    margin-top: 2px;
   }
 </style>

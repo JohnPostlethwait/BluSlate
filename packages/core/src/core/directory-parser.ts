@@ -244,7 +244,20 @@ export function groupFilesBySeason(files: MediaFile[], scanRoot: string): Map<st
       key = `${context.showName}::extras`;
       season = undefined;
     } else {
-      season = context.season ?? 1;
+      if (context.season !== undefined) {
+        // Directory context provides a season — use it
+        season = context.season;
+      } else {
+        // No season from directory structure — try to infer from filename
+        // (handles already-renamed files like "Show - S02E01 - Title.mkv")
+        const parsed = parseFilename(file.fileName);
+        if (parsed.season !== undefined) {
+          season = parsed.season;
+          logger.batch(`Inferred season ${season} from filename: ${file.fileName}`);
+        } else {
+          season = 1;
+        }
+      }
       key = `${context.showName}::${season}`;
     }
 
@@ -275,6 +288,9 @@ export function groupFilesBySeason(files: MediaFile[], scanRoot: string): Map<st
  */
 export function extractTrackNumber(fileName: string): number {
   const nameWithoutExt = fileName.replace(/\.[^.]+$/, '');
-  const match = nameWithoutExt.match(/(\d+)\s*$/);
+  // Strip trailing parenthetical numbers — these are title indicators
+  // like "Henry IV (2)", not MakeMKV track numbers like "title_t00"
+  const cleaned = nameWithoutExt.replace(/\s*\(\d+\)\s*$/, '');
+  const match = cleaned.match(/(\d+)\s*$/);
   return match ? parseInt(match[1], 10) : 0;
 }

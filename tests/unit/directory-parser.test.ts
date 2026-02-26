@@ -736,6 +736,106 @@ describe('groupFilesBySeason', () => {
     expect(groups.get('Star Trek TNG::5')!.files.length).toBe(3);
     expect(groups.get('Star Trek TNG::7')!.files.length).toBe(1);
   });
+
+  // ── Filename-based season inference ──────────────────────────────────
+
+  it('should infer season from already-renamed filenames in scan root', () => {
+    const files = [
+      {
+        filePath: '/media/shows/The Hollow Crown/The Hollow Crown - S02E01 - Henry VI Part 1.mkv',
+        fileName: 'The Hollow Crown - S02E01 - Henry VI Part 1.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/The Hollow Crown/The Hollow Crown - S02E02 - Henry VI Part 2.mkv',
+        fileName: 'The Hollow Crown - S02E02 - Henry VI Part 2.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/The Hollow Crown/The Hollow Crown - S02E03 - Richard III.mkv',
+        fileName: 'The Hollow Crown - S02E03 - Richard III.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/The Hollow Crown');
+
+    expect(groups.size).toBe(1);
+    expect(groups.has('The Hollow Crown::2')).toBe(true);
+    expect(groups.get('The Hollow Crown::2')!.files).toHaveLength(3);
+    expect(groups.get('The Hollow Crown::2')!.directoryContext.season).toBe(2);
+  });
+
+  it('should split mixed-season files in scan root into separate groups', () => {
+    const files = [
+      {
+        filePath: '/media/shows/MyShow/MyShow - S01E01 - Pilot.mkv',
+        fileName: 'MyShow - S01E01 - Pilot.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/MyShow - S01E02 - Second.mkv',
+        fileName: 'MyShow - S01E02 - Second.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/MyShow - S02E01 - Premiere.mkv',
+        fileName: 'MyShow - S02E01 - Premiere.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/MyShow');
+
+    expect(groups.size).toBe(2);
+    expect(groups.has('MyShow::1')).toBe(true);
+    expect(groups.has('MyShow::2')).toBe(true);
+    expect(groups.get('MyShow::1')!.files).toHaveLength(2);
+    expect(groups.get('MyShow::2')!.files).toHaveLength(1);
+  });
+
+  it('should default to season 1 for generic filenames in scan root', () => {
+    const files = [
+      {
+        filePath: '/media/shows/MyShow/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+      {
+        filePath: '/media/shows/MyShow/title_t01.mkv',
+        fileName: 'title_t01.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/MyShow');
+
+    expect(groups.size).toBe(1);
+    expect(groups.has('MyShow::1')).toBe(true);
+    expect(groups.get('MyShow::1')!.files).toHaveLength(2);
+  });
+
+  it('should prefer directory context season over filename season', () => {
+    const files = [
+      {
+        filePath: '/media/shows/MyShow/Season 3/MyShow - S02E01 - Title.mkv',
+        fileName: 'MyShow - S02E01 - Title.mkv',
+        extension: '.mkv',
+        sizeBytes: 4_000_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/MyShow');
+
+    // Directory says Season 3 — that takes precedence over S02 in filename
+    expect(groups.size).toBe(1);
+    expect(groups.has('MyShow::3')).toBe(true);
+    expect(groups.get('MyShow::3')!.directoryContext.season).toBe(3);
+  });
 });
 
 describe('extractTrackNumber', () => {
@@ -787,5 +887,18 @@ describe('extractTrackNumber', () => {
 
   it('should extract from stream0.mkv', () => {
     expect(extractTrackNumber('stream0.mkv')).toBe(0);
+  });
+
+  it('should ignore parenthetical numbers in episode titles like "Henry IV (2).mkv"', () => {
+    expect(extractTrackNumber('The Hollow Crown - S01E03 - Henry IV (2).mkv')).toBe(0);
+  });
+
+  it('should ignore parenthetical year like "Movie (2020).mkv"', () => {
+    expect(extractTrackNumber('Movie (2020).mkv')).toBe(0);
+  });
+
+  it('should still extract track from generic files after parenthetical stripping', () => {
+    expect(extractTrackNumber('title_t05.mkv')).toBe(5);
+    expect(extractTrackNumber('VTS_02_1.mkv')).toBe(1);
   });
 });

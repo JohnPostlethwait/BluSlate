@@ -69,7 +69,6 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
             matches.filter(
               (m) =>
                 m.status !== 'unmatched' &&
-                m.newFilename !== m.mediaFile.fileName &&
                 m.confidence >= minConfidence,
             ),
           );
@@ -77,7 +76,7 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
 
         return new Promise((resolve) => {
           // Send ALL matches so the ConfirmDialog can display both renameable
-          // files (with checkboxes) and skipped files (unmatched/unchanged).
+          // files (with checkboxes) and skipped files (unmatched only).
           // The dialog handles filtering internally.
           mainWindow.webContents.send('prompt:confirmRenames', { matches });
           ipcMain.once('prompt:confirmRenames:response', (_event, { confirmed }) => {

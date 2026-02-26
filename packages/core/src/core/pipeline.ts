@@ -1,9 +1,7 @@
 import { scanDirectory } from './scanner.js';
-import { parseFilename } from './parser.js';
 import { probeFile } from './prober.js';
-import { findMatch } from './matcher.js';
 import { executeRenames, writeRenameLog } from './renamer.js';
-import { shouldUseBatchMode, groupFilesBySeason } from './directory-parser.js';
+import { groupFilesBySeason } from './directory-parser.js';
 import { identifyShow, classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch } from './batch-matcher.js';
 import { searchDvdCompare, fetchDiscEpisodeData } from '../api/dvdcompare-client.js';
 import { TmdbClient } from '../api/tmdb-client.js';
@@ -12,7 +10,7 @@ import { logger } from '../utils/logger.js';
 import { FatalError } from '../errors.js';
 import { MediaType } from '../types/media.js';
 import type { AppConfig } from '../types/config.js';
-import type { MatchResult, ParsedFilename, MediaFile, ClassifiedFile, DirectoryContext } from '../types/media.js';
+import type { MatchResult, MediaFile, ClassifiedFile, DirectoryContext } from '../types/media.js';
 import type { UIAdapter } from '../types/ui-adapter.js';
 import type { IdentifiedShow } from './batch-matcher.js';
 import type { TmdbSeasonDetails } from '../types/tmdb.js';
@@ -96,36 +94,23 @@ export async function runPipeline(config: AppConfig, ui: UIAdapter): Promise<voi
   // 2. Initialize TMDb client
   const client = new TmdbClient(config.apiKey, config.language);
 
-  // 3. Decide: batch mode or per-file mode
-  let matches: MatchResult[];
-
-  if (shouldUseBatchMode(mediaFiles)) {
-    logger.info('Batch mode activated — generic filenames detected.');
-    matches = await runBatchPipeline(config, mediaFiles, client, ui);
-  } else {
-    matches = await runPerFilePipeline(config, mediaFiles, client, ui);
-  }
+  // 3. Run pipeline — always uses batch mode with TMDb confirmation,
+  // DVDCompare lookup, ffprobe scanning, and sequential matching.
+  const matches = await runBatchPipeline(config, mediaFiles, client, ui);
 
   // 4. Display results
   ui.display.displayResults(matches, config.directory);
 
-  // 5. Nothing to rename?
-  const renameable = matches.filter(
-    (m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName,
-  );
-
-  if (renameable.length === 0) {
-    logger.info('No files to rename.');
-    return;
-  }
-
-  // 6. Dry run: just display and exit
+  // 5. Dry run: just display and exit
   if (config.dryRun) {
+    const renameable = matches.filter(
+      (m) => m.status !== 'unmatched',
+    );
     ui.display.displaySummary(renameable.length, 0, 0, true);
     return;
   }
 
-  // 7. Confirm with user (may include interactive editing)
+  // 6. Confirm with user (may include interactive editing/reordering)
   const confirmed = await ui.prompts.confirmRenames(
     matches, config.autoAccept, config.minConfidence,
     config.template, config.directory, client,
@@ -136,92 +121,21 @@ export async function runPipeline(config: AppConfig, ui: UIAdapter): Promise<voi
     return;
   }
 
-  // 8. Execute renames
+  // 7. Execute renames
   ui.progress.start('Renaming files...');
   const renames = await executeRenames(confirmed, false);
   ui.progress.succeed('Renaming complete');
 
-  // 9. Write rename log
+  // 8. Write rename log
   await writeRenameLog(config.directory, renames);
 
-  // 10. Summary — recompute renameable since editing may have changed matches
+  // 9. Summary — recompute renameable since editing may have changed matches
   const finalRenameable = matches.filter(
-    (m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName,
+    (m) => m.status !== 'unmatched',
   );
   const skipped = finalRenameable.length - confirmed.length;
   const failed = confirmed.length - renames.length;
   ui.display.displaySummary(renames.length, skipped, failed, false);
-}
-
-/**
- * Per-file pipeline — the original matching approach using filename parsing.
- */
-async function runPerFilePipeline(
-  config: AppConfig,
-  mediaFiles: MediaFile[],
-  client: TmdbClient,
-  ui: UIAdapter,
-): Promise<MatchResult[]> {
-  const matches: MatchResult[] = [];
-  const total = mediaFiles.length;
-  ui.progress.start(progressText(1, total, mediaFiles[0].fileName));
-
-  for (let i = 0; i < mediaFiles.length; i++) {
-    const file = mediaFiles[i];
-    ui.progress.update(progressText(i + 1, total, file.fileName));
-
-    try {
-      // Parse the filename
-      let parsed: ParsedFilename = parseFilename(file.fileName);
-
-      // Override media type if forced
-      if (config.mediaType !== 'auto') {
-        parsed = { ...parsed, mediaType: config.mediaType as MediaType };
-      }
-
-      // Probe the file for embedded metadata
-      const probeData = await probeFile(file.filePath);
-
-      // Enrich parsed data with probe data
-      if (probeData) {
-        if (probeData.showName && !parsed.title) {
-          parsed = { ...parsed, title: probeData.showName };
-        }
-        if (probeData.season !== undefined && parsed.season === undefined) {
-          parsed = { ...parsed, season: probeData.season, mediaType: MediaType.TV };
-        }
-        if (probeData.episode !== undefined && !parsed.episodeNumbers) {
-          parsed = { ...parsed, episodeNumbers: [probeData.episode], mediaType: MediaType.TV };
-        }
-      }
-
-      // Find TMDb match
-      const match = await findMatch(client, file, parsed, probeData, config.template);
-      matches.push(match);
-
-      if (match.status === 'unmatched') {
-        ui.progress.update(`[${i + 1}/${total}] No match: ${file.fileName}`);
-      }
-    } catch (err) {
-      // Fatal errors (auth failure, etc.) must abort immediately
-      if (err instanceof FatalError) {
-        ui.progress.stop();
-        throw err;
-      }
-
-      logger.error(`Error processing ${file.fileName}: ${err}`);
-      matches.push({
-        mediaFile: file,
-        parsed: { mediaType: MediaType.Unknown, title: file.fileName },
-        confidence: 0,
-        newFilename: file.fileName,
-        status: 'unmatched',
-      });
-    }
-  }
-
-  ui.progress.stop();
-  return matches;
 }
 
 /**
@@ -493,7 +407,8 @@ async function runBatchPipeline(
       ui.progress.stop();
       logger.error(`Error processing group ${groupKey}: ${err}`);
 
-      // Mark all files in this group as unmatched
+      // Mark all files in this group as unmatched, with error visible to GUI
+      const errorMsg = `Matching failed: ${err instanceof Error ? err.message : String(err)}`;
       for (const file of group.files) {
         allMatches.push({
           mediaFile: file,
@@ -501,6 +416,7 @@ async function runBatchPipeline(
           confidence: 0,
           newFilename: file.fileName,
           status: 'unmatched',
+          warnings: [errorMsg],
         });
       }
     }
@@ -548,7 +464,8 @@ async function runBatchPipeline(
       ui.progress.stop();
       logger.warn(`Specials pass failed for ${showName}: ${err}`);
 
-      // Mark all specials candidates as unmatched
+      // Mark all specials candidates as unmatched, with error visible to GUI
+      const errorMsg = `Specials matching failed: ${err instanceof Error ? err.message : String(err)}`;
       for (const candidate of candidates) {
         allMatches.push({
           mediaFile: candidate.file,
@@ -557,6 +474,7 @@ async function runBatchPipeline(
           confidence: 0,
           newFilename: candidate.file.fileName,
           status: 'unmatched',
+          warnings: [errorMsg],
         });
       }
     }

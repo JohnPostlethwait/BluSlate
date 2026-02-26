@@ -13,7 +13,7 @@ export async function confirmRenames(
   scanDirectory?: string,
   client?: TmdbClient,
 ): Promise<MatchResult[]> {
-  let toRename = matches.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName);
+  let toRename = matches.filter((m) => m.status !== 'unmatched');
 
   if (toRename.length === 0) return [];
 
@@ -62,7 +62,7 @@ export async function confirmRenames(
 
       if (result === null) {
         // User chose "Back to menu" — re-filter and loop back
-        toRename = matches.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName);
+        toRename = matches.filter((m) => m.status !== 'unmatched');
         continue;
       }
 
@@ -132,7 +132,7 @@ async function reviewAndEdit(
         displayResults(matches, scanDirectory);
       }
 
-      return toRename.filter((m) => m.status !== 'unmatched' && m.newFilename !== m.mediaFile.fileName);
+      return toRename.filter((m) => m.status !== 'unmatched');
     }
 
     if (action === -2) {

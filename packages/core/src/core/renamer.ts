@@ -23,7 +23,10 @@ export async function executeRenames(
   for (const match of matches) {
     if (match.status === 'unmatched') continue;
     if (match.newFilename === match.mediaFile.fileName) {
-      logger.debug(`Skipping (already named correctly): ${match.mediaFile.fileName}`);
+      // Already named correctly — no filesystem operation needed, but still
+      // count as successfully processed so summaries are accurate.
+      logger.debug(`Already named correctly: ${match.mediaFile.fileName}`);
+      renames.push({ from: match.mediaFile.fileName, to: match.newFilename });
       continue;
     }
 
