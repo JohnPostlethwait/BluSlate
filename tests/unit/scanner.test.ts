@@ -207,6 +207,7 @@ describe('scanDirectory', () => {
 
     const result = await scanDirectory('/media');
 
-    expect(result.length).toBeGreaterThanOrEqual(videoFiles.length - 1); // .ts may or may not be video
+    // All extensions are in VIDEO_EXTENSIONS (.ts = transport stream, is included)
+    expect(result).toHaveLength(videoFiles.length);
   });
 });

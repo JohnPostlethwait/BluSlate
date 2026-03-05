@@ -106,6 +106,24 @@ describe('parseEpisodeInput', () => {
   it('should accept range at upper bound', () => {
     expect(parseEpisodeInput('9998-9999')).toEqual({ start: 9998, end: 9999 });
   });
+
+  it('should accept minimum valid episode number', () => {
+    expect(parseEpisodeInput('1')).toEqual({ start: 1 });
+  });
+
+  it('should reject multiple dashes (ambiguous range)', () => {
+    // '1-2-3' does not match the range regex ^(\d+)-(\d+)$ so parseInt picks up '1'
+    // and the validation lets it through — this documents the current behavior
+    const result = parseEpisodeInput('1-2-3');
+    expect(typeof result).toBe('string'); // should be rejected as invalid
+  });
+
+  it('should reject range with internal whitespace', () => {
+    // '1 - 2' does not match the range regex ^(\d+)-(\d+)$ so it falls through
+    // to single-number parsing — documents the current behavior
+    const result = parseEpisodeInput('1 - 2');
+    expect(typeof result).toBe('string'); // should be rejected as invalid
+  });
 });
 
 describe('applyEpisodeEdit', () => {

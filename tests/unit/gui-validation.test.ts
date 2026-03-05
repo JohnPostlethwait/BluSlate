@@ -116,7 +116,8 @@ describe('validatePipelineOptions', () => {
 
   // --- Boolean coercion ---
 
-  it('should coerce non-true values to false for booleans', () => {
+  it('should coerce truthy non-boolean values to false', () => {
+    // Only strict === true is accepted; everything else becomes false
     const result = validatePipelineOptions({
       directory: '/tmp',
       apiKey: 'abc',
@@ -127,6 +128,32 @@ describe('validatePipelineOptions', () => {
     expect(result.dryRun).toBe(false);
     expect(result.recursive).toBe(false);
     expect(result.autoAccept).toBe(false);
+  });
+
+  it('should coerce falsy non-boolean values to false', () => {
+    const result = validatePipelineOptions({
+      directory: '/tmp',
+      apiKey: 'abc',
+      dryRun: 0,
+      recursive: '',
+      autoAccept: null,
+    });
+    expect(result.dryRun).toBe(false);
+    expect(result.recursive).toBe(false);
+    expect(result.autoAccept).toBe(false);
+  });
+
+  it('should accept boolean true as true', () => {
+    const result = validatePipelineOptions({
+      directory: '/tmp',
+      apiKey: 'abc',
+      dryRun: true,
+      recursive: true,
+      autoAccept: true,
+    });
+    expect(result.dryRun).toBe(true);
+    expect(result.recursive).toBe(true);
+    expect(result.autoAccept).toBe(true);
   });
 
   // --- Language validation ---
@@ -168,6 +195,24 @@ describe('validatePipelineOptions', () => {
     expect(
       validatePipelineOptions({ ...validOptions, minConfidence: Infinity }).minConfidence,
     ).toBe(85);
+  });
+
+  it('should accept float minConfidence values without rounding', () => {
+    expect(
+      validatePipelineOptions({ ...validOptions, minConfidence: 50.5 }).minConfidence,
+    ).toBe(50.5);
+    expect(
+      validatePipelineOptions({ ...validOptions, minConfidence: 99.9 }).minConfidence,
+    ).toBe(99.9);
+  });
+
+  it('should clamp minConfidence at exact boundaries', () => {
+    expect(
+      validatePipelineOptions({ ...validOptions, minConfidence: 0 }).minConfidence,
+    ).toBe(0);
+    expect(
+      validatePipelineOptions({ ...validOptions, minConfidence: 100 }).minConfidence,
+    ).toBe(100);
   });
 
   // --- Template validation ---

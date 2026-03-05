@@ -47,16 +47,12 @@ export function parseEpisodeInput(value: string): { start: number; end?: number 
     return { start, end };
   }
 
-  // Single number
-  const n = parseInt(trimmed, 10);
-  if (isNaN(n) || String(n) !== trimmed.replace(/^0+/, '') && trimmed !== '0') {
-    // Allow zero-padded like "05" but reject "abc"
-    if (isNaN(parseInt(trimmed, 10))) {
-      return 'Please enter a number (e.g. 5) or range (e.g. 1-2)';
-    }
+  // Single number — must be all digits (zero-padded like "05" is fine, "1-2-3" or "1 - 2" are not)
+  if (!/^\d+$/.test(trimmed)) {
+    return 'Please enter a number (e.g. 5) or range (e.g. 1-2)';
   }
   const num = parseInt(trimmed, 10);
-  if (isNaN(num) || num < 1) return 'Episode number must be a positive integer';
+  if (num < 1) return 'Episode number must be a positive integer';
   if (num > 9999) return 'Episode number must be between 1 and 9999';
   return { start: num };
 }

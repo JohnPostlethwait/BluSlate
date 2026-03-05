@@ -85,7 +85,7 @@ describe('renderTemplate', () => {
     };
 
     const result = renderTemplate('{show_name} - S{season}E{episode}', item, '.mp4');
-    expect(result).toContain('S01E03');
+    expect(result).toBe('Show - S01E03.mp4');
   });
 
   it('should render multi-episode files as S01E01-02', () => {

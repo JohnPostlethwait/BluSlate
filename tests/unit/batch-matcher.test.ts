@@ -122,8 +122,15 @@ describe('classifyAndSortFiles', () => {
     const group = makeSeasonGroup(files, durations);
     const classified = classifyAndSortFiles(group, 43);
 
-    expect(classified.filter((f) => f.classification === 'episode')).toHaveLength(2);
-    expect(classified.filter((f) => f.classification === 'extra')).toHaveLength(2);
+    const episodes = classified.filter((f) => f.classification === 'episode');
+    const extras = classified.filter((f) => f.classification === 'extra');
+    expect(episodes).toHaveLength(2);
+    expect(extras).toHaveLength(2);
+    // Full-length files (43, 42 min) should be episodes; short files (4, 3 min) should be extras
+    expect(episodes.map((f) => f.file.fileName)).toContain('title_t00.mkv');
+    expect(episodes.map((f) => f.file.fileName)).toContain('title_t01.mkv');
+    expect(extras.map((f) => f.file.fileName)).toContain('title_t02.mkv');
+    expect(extras.map((f) => f.file.fileName)).toContain('title_t03.mkv');
   });
 
   it('should classify using 15min default when no expected runtime', () => {

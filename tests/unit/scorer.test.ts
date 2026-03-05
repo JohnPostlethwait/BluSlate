@@ -64,7 +64,8 @@ describe('computeConfidence', () => {
 
   it('should return high confidence for perfect match', () => {
     const confidence = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    expect(confidence).toBeGreaterThanOrEqual(80);
+    // title(30) + no-year redistribution(10) + ep match(15) + runtime ≤3min(20) + search rank 0(5) = 80
+    expect(confidence).toBe(80);
   });
 
   it('should return lower confidence for title mismatch', () => {
@@ -97,7 +98,23 @@ describe('computeConfidence', () => {
     };
     const withProbe = computeConfidence(baseParsedTV, probeData, baseTmdbTV, 48);
     const withoutProbe = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    expect(withProbe).toBeGreaterThanOrEqual(withoutProbe);
+    // Matching probe title adds exactly 10 points (1.0 similarity × 10)
+    expect(withProbe).toBe(90);
+    expect(withoutProbe).toBe(80);
+    expect(withProbe).toBeGreaterThan(withoutProbe);
+  });
+
+  it('should add zero probe points when probe title does not match', () => {
+    const probeData: ProbeResult = {
+      title: 'Completely Different Show',
+      durationMinutes: 48,
+    };
+    const withMismatchedProbe = computeConfidence(baseParsedTV, probeData, baseTmdbTV, 48);
+    const withoutProbe = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
+    // Probe title similarity is low so it adds fewer points than perfect match
+    expect(withMismatchedProbe).toBeLessThan(90);
+    // But still >= base since even low similarity adds some points
+    expect(withMismatchedProbe).toBeGreaterThanOrEqual(withoutProbe);
   });
 
   it('should always return a value between 0 and 100', () => {

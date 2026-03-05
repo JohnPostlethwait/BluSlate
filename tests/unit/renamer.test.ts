@@ -220,7 +220,7 @@ describe('writeRenameLog', () => {
     ).resolves.not.toThrow();
   });
 
-  it('should produce valid JSON in the log file', async () => {
+  it('should produce valid JSON with correct structure in the log file', async () => {
     mockedWriteFile.mockResolvedValue(undefined);
 
     await writeRenameLog('/media', [
@@ -228,6 +228,11 @@ describe('writeRenameLog', () => {
     ]);
 
     const content = mockedWriteFile.mock.calls[0][1] as string;
-    expect(() => JSON.parse(content)).not.toThrow();
+    const parsed = JSON.parse(content) as { timestamp: unknown; renames: unknown[] };
+    expect(typeof parsed.timestamp).toBe('string');
+    expect(Array.isArray(parsed.renames)).toBe(true);
+    expect(parsed.renames).toHaveLength(1);
+    expect((parsed.renames[0] as { from: string; to: string }).from).toBe('file with spaces.mkv');
+    expect((parsed.renames[0] as { from: string; to: string }).to).toBe('New Name (2020).mkv');
   });
 });
