@@ -4,7 +4,7 @@ Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.
 
 Available as a desktop app, CLI, self-hosted web app, or Docker container.
 
-> [!IMPORTANT]  
+> [!IMPORTANT]
 > 🤖 This application made heavy use of Claude Code to develop it, and is likely to contain errors. Please report [issues](https://github.com/JohnPostlethwait/BluSlate/issues) if you find them. 🤖
 
 ## Why BluSlate?

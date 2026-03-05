@@ -5,7 +5,6 @@ export { runPipeline, detectPlayAllFiles } from './core/pipeline.js';
 export { parseFilename } from './core/parser.js';
 export {
   groupFilesBySeason,
-  extractTrackNumber,
   parseDirectoryContext,
 } from './core/directory-parser.js';
 
@@ -45,6 +44,16 @@ export type {
 // Config
 export { loadApiKey, saveApiKey, buildConfig } from './config/config.js';
 export { renderTemplate, getTemplate } from './config/templates.js';
+
+// Validation
+export {
+  validatePipelineOptions,
+  sanitizeErrorMessage,
+  VALID_LANGUAGE_RE,
+  MAX_API_KEY_LENGTH,
+  MAX_TEMPLATE_LENGTH,
+} from './utils/validation.js';
+export type { ValidatedPipelineOptions } from './utils/validation.js';
 
 // Utils
 export { safeRename } from './utils/filesystem.js';

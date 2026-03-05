@@ -112,24 +112,28 @@ describe('parseFilename', () => {
       expect(result.episodeNumbers!.length).toBeGreaterThanOrEqual(2);
     });
 
-    // Episode-only without season (E05)
+    // Episode-only without season (E05) — library does not recognise this format
     it('should handle episode-only without season marker', () => {
       const result = parseFilename('Show.Name.E05.720p.mkv');
-      // The library may or may not handle this — at minimum it should not crash
-      expect(result.title).toBeTruthy();
+      // Library treats E05-only as unrecognized; episode token stays in the title
+      expect(result.mediaType).toBe(MediaType.Unknown);
+      expect(result.title).toBe('Show Name E05');
     });
 
     // Filename without year or S##E## — should be Unknown
     it('should handle unrecognized filename as Unknown', () => {
       const result = parseFilename('Some Random Title.mkv');
-      expect(result.title).toBeTruthy();
+      // Extension is preserved in the title when the filename is fully unrecognized
+      expect(result.mediaType).toBe(MediaType.Unknown);
+      expect(result.title).toBe('Some Random Title.mkv');
     });
 
-    // 4-digit S/E: S100E001 (very high numbers)
+    // 4-digit S/E: S100E001 (very high numbers) — library does not handle 3-digit seasons
     it('should handle very high season numbers like S100', () => {
       const result = parseFilename('Show.S100E01.mkv');
-      // The library or fallback may not handle 3-digit seasons
-      expect(result.title).toBeTruthy();
+      // 3-digit season numbers are not supported; falls back to Unknown
+      expect(result.mediaType).toBe(MediaType.Unknown);
+      expect(result.title).toBe('Show.S100E01.mkv');
     });
 
     // Compressed 3-digit episode (show.name.102)

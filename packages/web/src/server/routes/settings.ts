@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { loadSettings, saveSettings } from '../settings.js';
-import { MAX_API_KEY_LENGTH } from '../validation.js';
+import { MAX_API_KEY_LENGTH } from '@bluslate/core';
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async () => {

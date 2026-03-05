@@ -84,13 +84,12 @@ export async function undoRenames(
   }
 
   const validRenames = parsed.renames.filter(
-    (entry: unknown): entry is RenameEntry =>
-      entry !== null &&
-      typeof entry === 'object' &&
-      typeof (entry as Record<string, unknown>).from === 'string' &&
-      typeof (entry as Record<string, unknown>).to === 'string' &&
-      (entry as Record<string, unknown>).from !== '' &&
-      (entry as Record<string, unknown>).to !== '',
+    (entry: unknown): entry is RenameEntry => {
+      if (entry === null || typeof entry !== 'object') return false;
+      const e = entry as Record<string, unknown>;
+      return typeof e.from === 'string' && e.from !== '' &&
+             typeof e.to === 'string' && e.to !== '';
+    },
   );
 
   if (validRenames.length === 0) {

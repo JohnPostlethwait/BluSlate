@@ -5,7 +5,8 @@ import {
   VALID_LANGUAGE_RE,
   MAX_API_KEY_LENGTH,
   MAX_TEMPLATE_LENGTH,
-} from '../../packages/gui/src/main/validation.js';
+} from '../../packages/core/src/utils/validation.js';
+import { AuthenticationError, FatalError } from '../../packages/core/src/errors.js';
 
 // ---------------------------------------------------------------------------
 // validatePipelineOptions
@@ -214,14 +215,12 @@ describe('sanitizeErrorMessage', () => {
   });
 
   it('should pass through AuthenticationError messages', () => {
-    const err = new Error('Invalid API key');
-    err.name = 'AuthenticationError';
+    const err = new AuthenticationError('Invalid API key');
     expect(sanitizeErrorMessage(err)).toBe('Invalid API key');
   });
 
   it('should pass through FatalError messages', () => {
-    const err = new Error('Something went very wrong at /secret/path');
-    err.name = 'FatalError';
+    const err = new FatalError('Something went very wrong at /secret/path');
     expect(sanitizeErrorMessage(err)).toBe('Something went very wrong at /secret/path');
   });
 

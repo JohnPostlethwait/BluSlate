@@ -8,7 +8,7 @@ import type { Socket } from 'socket.io';
 import { stat } from 'node:fs/promises';
 import { runPipeline, buildConfig } from '@bluslate/core';
 import { createWebAdapter, PipelineCancelledError, type CancellableWebAdapter } from './web-adapter.js';
-import { validatePipelineOptions, sanitizeErrorMessage } from './validation.js';
+import { validatePipelineOptions, sanitizeErrorMessage } from '@bluslate/core';
 import { loadSettings, saveSettings, addRecentDirectory } from './settings.js';
 
 let pipelineRunning = false;

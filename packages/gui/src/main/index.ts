@@ -19,7 +19,7 @@ if (!is.dev) {
 import { createGuiAdapter } from './gui-adapter.js';
 import { loadSettings, saveSettings, addRecentDirectory } from './settings.js';
 import type { AppSettings } from './settings.js';
-import { validatePipelineOptions, sanitizeErrorMessage, MAX_API_KEY_LENGTH } from './validation.js';
+import { validatePipelineOptions, sanitizeErrorMessage, MAX_API_KEY_LENGTH } from '@bluslate/core';
 
 /**
  * Resolve the ffprobe binary: bundled in app resources (production) →
