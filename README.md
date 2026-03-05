@@ -4,6 +4,9 @@ Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.
 
 Available as a desktop app, CLI, self-hosted web app, or Docker container.
 
+> [!IMPORTANT]  
+> 🤖🤖🤖 This application made heavy use of Claude Code to develop it. It is likely more prone to errors than other applications. Please report issues if you find them. 🤖🤖🤖
+
 ## Why BluSlate?
 
 Most media scrapers rely on files already being named correctly — they fail completely on raw DVD/Blu-ray rips with generic filenames like `title_t00.mkv`.
