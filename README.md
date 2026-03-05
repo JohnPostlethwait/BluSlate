@@ -55,6 +55,50 @@ pnpm run package:gui
 
 Built artifacts appear in `packages/gui/release/`. On macOS, copy the `.app` to `/Applications`.
 
+### Docker (self-hosted web app)
+
+```bash
+docker compose up
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+
+The included `docker-compose.yml` exposes the full BluSlate UI as a web app. Configure it by editing the file:
+
+```yaml
+services:
+  bluslate:
+    build: .
+    ports:
+      - "3000:3000"       # Host port:container port. Change the left side to use a different host port.
+    volumes:
+      - /path/to/media:/media   # Mount your media directory here (required)
+      - bluslate-data:/data     # Named volume for config and rename manifests (undo history)
+    environment:
+      - TMDB_API_KEY=your-key-here   # Required — TMDb Read Access Token
+      # - BLUSLATE_LANGUAGE=en-US
+      # - BLUSLATE_TEMPLATE={show_name} - S{season}E{episode} - {episode_title}
+      # - BLUSLATE_MIN_CONFIDENCE=85
+    restart: unless-stopped
+```
+
+**Volumes:**
+
+| Volume | Purpose |
+|--------|---------|
+| `/path/to/media:/media` | Your media files. BluSlate browses and renames files under this path inside the container. Replace `/path/to/media` with the actual path on your host. |
+| `bluslate-data:/data` | Persistent storage for settings (API key, template) and rename manifests used by undo. Survives container restarts and upgrades. |
+
+**Environment variables:**
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TMDB_API_KEY` | Yes | — | TMDb Read Access Token |
+| `BLUSLATE_LANGUAGE` | No | `en-US` | BCP 47 language code for TMDb metadata |
+| `BLUSLATE_TEMPLATE` | No | `{show_name} - S{season}E{episode} - {episode_title}` | Default naming template |
+| `BLUSLATE_MIN_CONFIDENCE` | No | `85` | Minimum confidence score (0–100) to auto-accept a match |
+| `PORT` | No | `3000` | Port the server listens on inside the container |
+
 ## Usage
 
 ### CLI
@@ -108,6 +152,25 @@ Stores the key at `$XDG_CONFIG_HOME/bluslate/config.json` (Linux/macOS) or `%APP
 
 Launch the desktop app from `packages/gui/release/` or your system's Applications folder. The GUI provides the same pipeline as the CLI with a visual interface for reviewing and confirming matches.
 
+### Web
+
+Run the web server locally without Docker:
+
+```bash
+pnpm --filter @bluslate/core run build
+pnpm --filter @bluslate/web run build
+TMDB_API_KEY=your-key-here MEDIA_ROOT=/path/to/media node packages/web/dist/server/index.js
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+
+For development with hot reload:
+
+```bash
+pnpm --filter @bluslate/core run build
+TMDB_API_KEY=your-key-here MEDIA_ROOT=/path/to/media pnpm --filter @bluslate/web run dev
+```
+
 ### Naming Templates
 
 | Placeholder | Description |
@@ -129,7 +192,8 @@ BluSlate/
 ├── packages/
 │   ├── core/    — Business logic (matching, scoring, TMDb/DVDCompare APIs, pipeline)
 │   ├── cli/     — Terminal frontend (Commander.js, ora, inquirer)
-│   └── gui/     — Electron desktop app (Svelte 5, electron-vite)
+│   ├── gui/     — Electron desktop app (Svelte 5, electron-vite)
+│   └── web/     — Self-hosted web server (Fastify, Socket.IO, Svelte 5)
 ├── tests/
 │   ├── unit/    — 18 test files
 │   └── fixtures/
