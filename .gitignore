@@ -3,7 +3,7 @@ dist/
 *.tsbuildinfo
 .env
 coverage/
-.mediafetch-log.json
+.bluslate-log.json
 .claude/
 
 # electron-builder output

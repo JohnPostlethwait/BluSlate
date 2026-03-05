@@ -41,7 +41,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build core
-        run: pnpm --filter @mediafetch/core run build
+        run: pnpm --filter @bluslate/core run build
 
       - name: Run tests
         run: pnpm run test
@@ -83,11 +83,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build @mediafetch/core
-        run: pnpm --filter @mediafetch/core run build
+      - name: Build @bluslate/core
+        run: pnpm --filter @bluslate/core run build
 
-      - name: Build @mediafetch/gui
-        run: pnpm --filter @mediafetch/gui run build
+      - name: Build @bluslate/gui
+        run: pnpm --filter @bluslate/gui run build
 
       - name: Package with electron-builder
         env:
@@ -150,7 +150,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
-          name: MediaFetch ${{ steps.tag.outputs.tag_name }}
+          name: BluSlate ${{ steps.tag.outputs.tag_name }}
           draft: ${{ steps.tag.outputs.is_draft }}
           prerelease: false
           generate_release_notes: true

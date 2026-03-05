@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import chalk from 'chalk';
-import type { MatchResult } from '@mediafetch/core';
+import type { MatchResult } from '@bluslate/core';
 
 function confidenceColor(confidence: number): (s: string) => string {
   if (confidence >= 85) return chalk.green;

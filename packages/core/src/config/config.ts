@@ -63,7 +63,7 @@ export async function buildConfig(options: {
       'TMDb API key is required. Set it via:\n' +
       '  1. --api-key flag\n' +
       '  2. TMDB_API_KEY environment variable\n' +
-      '  3. Run "mediafetch config" to save it\n\n' +
+      '  3. Run "bluslate config" to save it\n\n' +
       'Get a free API key at: https://www.themoviedb.org/settings/api'
     );
   }

@@ -9,8 +9,8 @@ vi.mock('node:fs/promises', () => ({
 
 // Mock platform utils
 vi.mock('../../packages/core/src/utils/platform.js', () => ({
-  getConfigFilePath: vi.fn(() => '/mock/.config/mediafetch/config.json'),
-  getConfigDir: vi.fn(() => '/mock/.config/mediafetch'),
+  getConfigFilePath: vi.fn(() => '/mock/.config/bluslate/config.json'),
+  getConfigDir: vi.fn(() => '/mock/.config/bluslate'),
 }));
 
 // Mock the logger
@@ -103,7 +103,7 @@ describe('saveApiKey', () => {
 
     await saveApiKey('new-key');
 
-    expect(mockedMkdir).toHaveBeenCalledWith('/mock/.config/mediafetch', { recursive: true });
+    expect(mockedMkdir).toHaveBeenCalledWith('/mock/.config/bluslate', { recursive: true });
     expect(mockedWriteFile).toHaveBeenCalledOnce();
 
     const writtenContent = JSON.parse((mockedWriteFile.mock.calls[0][1] as string).trim());

@@ -149,7 +149,7 @@
     </button>
     {#if tipsOpen}
       <ul class="tips-list">
-        <li><strong>Season folders should have clear naming</strong> (S1, or Season 1) — MediaFetch uses folder structure to determine episode seasons. Often the disks themselves contain adequate naming.</li>
+        <li><strong>Season folders should have clear naming</strong> (S1, or Season 1) — BluSlate uses folder structure to determine episode seasons. Often the disks themselves contain adequate naming.</li>
         <li><strong>Remove "Play All" tracks</strong> — Long concatenated files consume episode slots and confuse the matcher.</li>
         <li><strong>Delete extras and duplicates</strong> — Bonus content and duplicate quality rips take episode positions from real episodes.</li>
         <li><strong>TMDb Show Identification</strong> — Edit the search on the TMDb screen if the folder name doesn't result in a match. This name is also used to search DVDCompare.</li>

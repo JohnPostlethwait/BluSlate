@@ -14,7 +14,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@mediafetch/core': path.resolve(__dirname, 'packages/core/src/index.ts'),
+      '@bluslate/core': path.resolve(__dirname, 'packages/core/src/index.ts'),
     },
   },
 });

@@ -1,4 +1,4 @@
-# MediaFetch
+# BluSlate
 
 Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.org/) metadata. Available as both a CLI and an Electron desktop app.
 
@@ -25,8 +25,8 @@ Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.
 ## Installation
 
 ```bash
-git clone https://github.com/JohnPostlethwait/MediaFetch.git
-cd MediaFetch
+git clone https://github.com/JohnPostlethwait/BluSlate.git
+cd BluSlate
 pnpm install
 pnpm run build
 ```
@@ -34,8 +34,8 @@ pnpm run build
 ### CLI (global install)
 
 ```bash
-pnpm --filter @mediafetch/cli link --global
-mediafetch --version
+pnpm --filter @bluslate/cli link --global
+bluslate --version
 ```
 
 ### GUI (packaged app)
@@ -51,7 +51,7 @@ Built artifacts appear in `packages/gui/release/`. On macOS, copy the `.app` to 
 ### CLI
 
 ```bash
-mediafetch <directory> [options]
+bluslate <directory> [options]
 ```
 
 | Flag | Description | Default |
@@ -69,31 +69,31 @@ mediafetch <directory> [options]
 
 ```bash
 # Rename TV episodes in a directory
-mediafetch /path/to/tv/shows
+bluslate /path/to/tv/shows
 
 # Dry-run with recursive scan
-mediafetch -r -n /media/tv/show
+bluslate -r -n /media/tv/show
 
 # Provide API key inline
-TMDB_API_KEY=your_token mediafetch /media/tv
+TMDB_API_KEY=your_token bluslate /media/tv
 
 # Custom naming template
-mediafetch --template '{show_name} {season}x{episode}' /media/tv
+bluslate --template '{show_name} {season}x{episode}' /media/tv
 ```
 
 **API key resolution order:**
 
 1. `--api-key` flag
 2. `TMDB_API_KEY` environment variable
-3. Config file (set via `mediafetch config`)
+3. Config file (set via `bluslate config`)
 
 ### Configure API key
 
 ```bash
-mediafetch config
+bluslate config
 ```
 
-Stores the key at `$XDG_CONFIG_HOME/mediafetch/config.json` (Linux/macOS) or `%APPDATA%\mediafetch\config.json` (Windows).
+Stores the key at `$XDG_CONFIG_HOME/bluslate/config.json` (Linux/macOS) or `%APPDATA%\bluslate\config.json` (Windows).
 
 ### GUI
 
@@ -116,7 +116,7 @@ Launch the desktop app from `packages/gui/release/` or your system's Application
 ## Project Structure
 
 ```
-MediaFetch/
+BluSlate/
 ├── packages/
 │   ├── core/    — Business logic (matching, scoring, TMDb/DVDCompare APIs, pipeline)
 │   ├── cli/     — Terminal frontend (Commander.js, ora, inquirer)
@@ -146,10 +146,10 @@ Both the CLI and GUI implement this interface, keeping the core pipeline complet
 pnpm run build
 
 # Build core only
-pnpm --filter @mediafetch/core run build
+pnpm --filter @bluslate/core run build
 
 # Run GUI in dev mode (hot reload)
-pnpm --filter @mediafetch/core run build && pnpm --filter @mediafetch/gui run dev
+pnpm --filter @bluslate/core run build && pnpm --filter @bluslate/gui run dev
 
 # Type check all packages
 pnpm run typecheck

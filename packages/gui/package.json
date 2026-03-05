@@ -1,7 +1,7 @@
 {
-  "name": "@mediafetch/gui",
+  "name": "@bluslate/gui",
   "version": "0.1.0",
-  "description": "Desktop GUI for MediaFetch — rename TV show files using TMDb metadata",
+  "description": "Desktop GUI for BluSlate — rename TV show files using TMDb metadata",
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
   },
   "license": "ISC",
   "dependencies": {
-    "@mediafetch/core": "workspace:*",
+    "@bluslate/core": "workspace:*",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@ffprobe-installer/ffprobe": "^2.1.0"

@@ -1,7 +1,7 @@
 import { select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { renderTemplate, getTemplate, logger } from '@mediafetch/core';
-import type { MatchResult, TmdbClient } from '@mediafetch/core';
+import { renderTemplate, getTemplate, logger } from '@bluslate/core';
+import type { MatchResult, TmdbClient } from '@bluslate/core';
 
 export type EditAction = 'accepted' | 'edited' | 'skipped' | 'cancelled';
 export type ReviewStatus = 'pending' | 'accepted' | 'skipped';

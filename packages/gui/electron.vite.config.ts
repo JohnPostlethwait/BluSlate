@@ -4,10 +4,10 @@ import path from 'node:path';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@mediafetch/core'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@bluslate/core'] })],
     resolve: {
       alias: {
-        '@mediafetch/core': path.resolve(__dirname, '../core/src/index.ts'),
+        '@bluslate/core': path.resolve(__dirname, '../core/src/index.ts'),
       },
     },
   },
@@ -33,7 +33,7 @@ export default defineConfig({
     plugins: [svelte()],
     resolve: {
       alias: {
-        '@mediafetch/core': path.resolve(__dirname, '../core/src/index.ts'),
+        '@bluslate/core': path.resolve(__dirname, '../core/src/index.ts'),
       },
     },
   },

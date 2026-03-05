@@ -43,7 +43,7 @@
       if (currentView !== 'setup') {
         // Block the reload — throwing prevents Vite's client from calling
         // location.reload(). The user's view and data are preserved.
-        throw '[MediaFetch] Blocked HMR full reload during active session';
+        throw '[BluSlate] Blocked HMR full reload during active session';
       }
     });
   }
@@ -231,7 +231,7 @@
 
 <main>
   <header>
-    <h1>MediaFetch</h1>
+    <h1>BluSlate</h1>
     <p class="subtitle">Rename TV shows using TMDb metadata</p>
   </header>
 

@@ -114,7 +114,7 @@ export function parseDirectoryContext(filePath: string, scanRoot: string): Direc
   const relativePath = path.relative(absoluteRoot, fileDir);
 
   // The show name comes from the scan root basename
-  // (the user pointed mediafetch at the show directory)
+  // (the user pointed bluslate at the show directory)
   const showName = path.basename(absoluteRoot);
 
   if (!showName) return null;

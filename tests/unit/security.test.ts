@@ -8,7 +8,7 @@ import { sanitizeFilename } from '../../packages/core/src/utils/sanitize.js';
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mediafetch-test-'));
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bluslate-test-'));
 });
 
 afterEach(async () => {

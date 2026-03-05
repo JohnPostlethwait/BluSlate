@@ -17,37 +17,37 @@ This project requires Node.js 22 via nvm. Shell state resets between commands, s
 source ~/.nvm/nvm.sh && nvm use 22
 
 # Install dependencies
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch install
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate install
 
 # Build everything (core must build before cli/gui can use it)
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch run build
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run build
 
 # Build only core (required when core changes before running gui/cli)
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch --filter @mediafetch/core run build
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/core run build
 
 # Run all tests
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch run test
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run test
 
 # Run a single test file
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch exec vitest run tests/unit/batch-matcher.test.ts
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate exec vitest run tests/unit/batch-matcher.test.ts
 
 # Run tests in watch mode
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch run test:watch
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run test:watch
 
 # Type checking across all packages
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch run typecheck
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run typecheck
 
 # Launch GUI in dev mode (builds core first, then starts Electron with hot reload)
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch --filter @mediafetch/core run build && pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch --filter @mediafetch/gui run dev
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/core run build && pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/gui run dev
 
 # Package GUI for distribution
-pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch run package:gui
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run package:gui
 
 # Install GUI to /Applications (must kill running instances, remove old app, and clear xattr to avoid macOS caching stale bundles)
-pkill -f MediaFetch 2>/dev/null; sleep 1; rm -rf /Applications/MediaFetch.app && cp -R /Users/johnpostlethwait/Documents/workspace/MediaFetch/packages/gui/release/mac-arm64/MediaFetch.app /Applications/MediaFetch.app && /usr/bin/xattr -cr /Applications/MediaFetch.app
+pkill -f BluSlate 2>/dev/null; sleep 1; rm -rf /Applications/BluSlate.app && cp -R /Users/johnpostlethwait/Documents/workspace/BluSlate/packages/gui/release/mac-arm64/BluSlate.app /Applications/BluSlate.app && /usr/bin/xattr -cr /Applications/BluSlate.app
 
 # Git commands (cwd resets, so use -C)
-git -C /Users/johnpostlethwait/Documents/workspace/MediaFetch status
+git -C /Users/johnpostlethwait/Documents/workspace/BluSlate status
 ```
 
 ## Project Architecture
@@ -56,9 +56,9 @@ git -C /Users/johnpostlethwait/Documents/workspace/MediaFetch status
 
 Three packages under `packages/`:
 
-- **`@mediafetch/core`** — Pure business logic, zero UI dependencies. Built with tsup to ESM. All matching, scoring, parsing, TMDb API, and pipeline orchestration lives here.
-- **`@mediafetch/cli`** — CLI frontend using Commander.js, ora (spinners), @inquirer/prompts, chalk. Implements `UIAdapter` for terminal interaction.
-- **`@mediafetch/gui`** — Electron desktop app using electron-vite + Svelte 5 (runes). Implements `UIAdapter` via IPC bridge.
+- **`@bluslate/core`** — Pure business logic, zero UI dependencies. Built with tsup to ESM. All matching, scoring, parsing, TMDb API, and pipeline orchestration lives here.
+- **`@bluslate/cli`** — CLI frontend using Commander.js, ora (spinners), @inquirer/prompts, chalk. Implements `UIAdapter` for terminal interaction.
+- **`@bluslate/gui`** — Electron desktop app using electron-vite + Svelte 5 (runes). Implements `UIAdapter` via IPC bridge.
 
 ### UIAdapter Pattern (Core Architectural Concept)
 
@@ -97,8 +97,8 @@ Two scoring systems in `core/scorer.ts`:
 - **Renderer** (`gui/src/renderer/`) — Svelte 5 with runes ($state, $derived). View states: setup → running → results → confirm → summary
 - **GUI adapter** (`gui/src/main/gui-adapter.ts`) — Implements UIAdapter, bridges pipeline events to renderer via IPC
 - Preload scripts MUST be CommonJS (sandboxed Electron requirement)
-- `@mediafetch/core` is aliased to source in electron.vite.config.ts for dev, built for production
-- `externalizeDepsPlugin` in `electron.vite.config.ts` must exclude `@mediafetch/core` so the alias works and core is bundled from source (not loaded from dist at runtime)
+- `@bluslate/core` is aliased to source in electron.vite.config.ts for dev, built for production
+- `externalizeDepsPlugin` in `electron.vite.config.ts` must exclude `@bluslate/core` so the alias works and core is bundled from source (not loaded from dist at runtime)
 
 ### Determining if the GUI is Running
 
@@ -117,7 +117,7 @@ If no Electron processes appear, the app is closed. If processes appear, the app
 
 - vitest at monorepo root, tests in `tests/unit/`
 - Tests import directly from source: `../../packages/core/src/` or `../../packages/cli/src/`
-- `@mediafetch/core` aliased in vitest.config.ts to source for resolution
+- `@bluslate/core` aliased in vitest.config.ts to source for resolution
 - TMDb API calls in tests use vitest mocks (`vi.mock`)
 
 ### Key External Dependencies

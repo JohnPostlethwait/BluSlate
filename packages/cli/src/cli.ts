@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { buildConfig, saveApiKey, setFfprobePath, isFfprobeAvailable } from '@mediafetch/core';
-import { runPipeline } from '@mediafetch/core';
-import { setVerbose } from '@mediafetch/core';
+import { buildConfig, saveApiKey, setFfprobePath, isFfprobeAvailable } from '@bluslate/core';
+import { runPipeline } from '@bluslate/core';
+import { setVerbose } from '@bluslate/core';
 import chalk from 'chalk';
 import { promptForApiKey } from './ui/prompts.js';
 import { createCliAdapter } from './ui/cli-adapter.js';
@@ -10,7 +10,7 @@ export function createProgram(): Command {
   const program = new Command();
 
   program
-    .name('mediafetch')
+    .name('bluslate')
     .description('Rename TV show files using TMDb metadata')
     .version('0.1.0')
     .argument('<directory>', 'Directory containing media files to rename')
@@ -27,20 +27,20 @@ Environment Variables:
   TMDB_API_KEY        TMDb API Read Access Token (overridden by --api-key flag)
                       Get a free token at: https://www.themoviedb.org/settings/api
   XDG_CONFIG_HOME     Config directory on Linux/macOS (default: ~/.config)
-                      Config file stored at: $XDG_CONFIG_HOME/mediafetch/config.json
+                      Config file stored at: $XDG_CONFIG_HOME/bluslate/config.json
   APPDATA             Config directory on Windows (default: %APPDATA%)
-                      Config file stored at: %APPDATA%/mediafetch/config.json
+                      Config file stored at: %APPDATA%/bluslate/config.json
 
 API Key Resolution Order:
   1. --api-key flag
   2. TMDB_API_KEY environment variable
-  3. Config file (set via "mediafetch config")
+  3. Config file (set via "bluslate config")
 
 Examples:
-  $ mediafetch /path/to/tv/shows
-  $ mediafetch -r -n /media/tv/show
-  $ TMDB_API_KEY=your_token mediafetch /media/tv
-  $ mediafetch --template '{show_name} {season}x{episode}' /media/tv`)
+  $ bluslate /path/to/tv/shows
+  $ bluslate -r -n /media/tv/show
+  $ TMDB_API_KEY=your_token bluslate /media/tv
+  $ bluslate --template '{show_name} {season}x{episode}' /media/tv`)
     .action(async (directory: string, options: Record<string, unknown>) => {
       if (options['verbose']) setVerbose(true);
 
@@ -92,7 +92,7 @@ Examples:
   // Subcommand: config
   program
     .command('config')
-    .description('Interactively configure MediaFetch settings')
+    .description('Interactively configure BluSlate settings')
     .action(async () => {
       try {
         const apiKey = await promptForApiKey();

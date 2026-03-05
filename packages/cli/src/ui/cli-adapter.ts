@@ -1,4 +1,4 @@
-import type { UIAdapter } from '@mediafetch/core';
+import type { UIAdapter } from '@bluslate/core';
 import { startSpinner, updateSpinner, succeedSpinner, failSpinner, stopSpinner } from './progress.js';
 import { confirmRenames, confirmShowIdentification, confirmDvdCompareSelection } from './prompts.js';
 import { displayResults, displaySummary } from './display.js';

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
-import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable, renderTemplate, getTemplate, undoRenames } from '@mediafetch/core';
+import { runPipeline, buildConfig, setFfprobePath, isFfprobeAvailable, renderTemplate, getTemplate, undoRenames } from '@bluslate/core';
 
 // Packaged macOS .app bundles inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
 // that doesn't include Homebrew paths where ffprobe typically lives.
@@ -70,7 +70,7 @@ function createWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 600,
     show: false,
-    title: 'MediaFetch',
+    title: 'BluSlate',
     icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -131,7 +131,7 @@ app.whenReady().then(async () => {
   currentSettings = await loadSettings();
 
   // Set app user model ID for Windows notifications
-  electronApp.setAppUserModelId('com.mediafetch.app');
+  electronApp.setAppUserModelId('com.bluslate.app');
 
   // Default open/close shortcuts for dev
   app.on('browser-window-created', (_, window) => {
@@ -270,7 +270,7 @@ app.whenReady().then(async () => {
     },
   );
 
-  // Undo renames using the .mediafetch-log.json file
+  // Undo renames using the .bluslate-log.json file
   ipcMain.handle('undo:execute', (_event, directory: string) => {
     if (!directory || typeof directory !== 'string') {
       return { restored: 0, failed: 0 };

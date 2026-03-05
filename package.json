@@ -1,5 +1,5 @@
 {
-  "name": "mediafetch",
+  "name": "bluslate",
   "version": "0.1.0",
   "private": true,
   "description": "Cross-platform tool to rename TV show files using TMDb metadata",
@@ -10,9 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r run typecheck",
-    "start": "pnpm --filter @mediafetch/cli run start",
+    "start": "pnpm --filter @bluslate/cli run start",
     "generate-icon": "node scripts/generate-icon.mjs",
-    "package:gui": "pnpm --filter @mediafetch/core run build && pnpm --filter @mediafetch/gui run build && pnpm --filter @mediafetch/gui run package"
+    "package:gui": "pnpm --filter @bluslate/core run build && pnpm --filter @bluslate/gui run build && pnpm --filter @bluslate/gui run package"
   },
   "engines": {
     "node": ">=22.0.0"

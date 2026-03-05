@@ -1,5 +1,5 @@
-appId: com.mediafetch.app
-productName: MediaFetch
+appId: com.bluslate.app
+productName: BluSlate
 directories:
   buildResources: resources
   output: release
@@ -14,7 +14,7 @@ files:
 publish:
   provider: github
   owner: JohnPostlethwait
-  repo: MediaFetch
+  repo: BluSlate
   releaseType: release
 
 # Strip macOS extended attributes before codesign runs
@@ -32,7 +32,7 @@ mac:
   # Skip signing for local/CI builds without certificates.
   # On Apple Silicon, macOS Sequoia's com.apple.provenance xattr blocks ad-hoc
   # signing. This produces unsigned binaries — users may need:
-  #   xattr -cr /Applications/MediaFetch.app
+  #   xattr -cr /Applications/BluSlate.app
   # TODO: Replace with your Developer ID when code signing is configured
   identity: null
   # identity: "Developer ID Application: Your Name (TEAM_ID)"
@@ -46,15 +46,15 @@ win:
   # certificatePassword: ''
 nsis:
   artifactName: '${productName}-${version}-setup.${ext}'
-  shortcutName: MediaFetch
-  uninstallDisplayName: MediaFetch
+  shortcutName: BluSlate
+  uninstallDisplayName: BluSlate
   createDesktopShortcut: always
 linux:
   target:
     - AppImage
     - deb
   artifactName: '${productName}-${version}-${arch}.${ext}'
-  maintainer: mediafetch
+  maintainer: bluslate
   category: Utility
 
 # Copy icon.png to app resources so it's accessible via process.resourcesPath on Linux

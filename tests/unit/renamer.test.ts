@@ -196,7 +196,7 @@ describe('writeRenameLog', () => {
 
     expect(mockedWriteFile).toHaveBeenCalledOnce();
     const [logPath, content] = mockedWriteFile.mock.calls[0] as [string, string];
-    expect(logPath).toBe(path.join('/media', '.mediafetch-log.json'));
+    expect(logPath).toBe(path.join('/media', '.bluslate-log.json'));
 
     const parsed = JSON.parse(content);
     expect(parsed.timestamp).toBeDefined();

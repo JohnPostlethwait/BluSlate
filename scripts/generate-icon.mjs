@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Generate the MediaFetch placeholder app icon.
+ * Generate the BluSlate placeholder app icon.
  *
- * Renders an SVG (dark gradient rounded-rect + bold white "M") into a
+ * Renders an SVG (dark gradient rounded-rect + bold white "B") into a
  * 1024x1024 PNG at packages/gui/resources/icon.png.
  *
  * electron-builder automatically converts this PNG into:
@@ -47,22 +47,22 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE
         fill="none" stroke="url(#accent)" stroke-width="4" opacity="0.3"/>
   <!-- Film-reel accent strip at top -->
   <rect x="180" y="140" width="664" height="8" rx="4" fill="url(#accent)" opacity="0.5"/>
-  <!-- Bold "M" letter -->
+  <!-- Bold "B" letter -->
   <text x="512" y="700"
         text-anchor="middle"
         font-family="'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
         font-size="560"
         font-weight="800"
         fill="#f1f5f9"
-        letter-spacing="-20">M</text>
-  <!-- Subtle "f" subscript for "MediaFetch" -->
+        letter-spacing="-20">B</text>
+  <!-- Subtle "s" subscript for "BluSlate" -->
   <text x="740" y="780"
         text-anchor="middle"
         font-family="'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
         font-size="180"
         font-weight="300"
         fill="url(#accent)"
-        opacity="0.7">f</text>
+        opacity="0.7">s</text>
   <!-- Film-reel accent strip at bottom -->
   <rect x="180" y="876" width="664" height="8" rx="4" fill="url(#accent)" opacity="0.5"/>
 </svg>`;

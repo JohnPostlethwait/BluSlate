@@ -1,7 +1,7 @@
 {
-  "name": "@mediafetch/core",
+  "name": "@bluslate/core",
   "version": "0.1.0",
-  "description": "Core business logic for MediaFetch — media file matching and renaming using TMDb",
+  "description": "Core business logic for BluSlate — media file matching and renaming using TMDb",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

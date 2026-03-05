@@ -65,7 +65,7 @@ export async function executeRenames(
 export async function undoRenames(
   directory: string,
 ): Promise<{ restored: number; failed: number }> {
-  const logPath = path.join(directory, '.mediafetch-log.json');
+  const logPath = path.join(directory, '.bluslate-log.json');
   let logData: unknown;
 
   try {
@@ -149,7 +149,7 @@ export async function writeRenameLog(
 ): Promise<void> {
   if (renames.length === 0) return;
 
-  const logPath = path.join(directory, '.mediafetch-log.json');
+  const logPath = path.join(directory, '.bluslate-log.json');
   const log: RenameLog = {
     timestamp: new Date().toISOString(),
     renames,

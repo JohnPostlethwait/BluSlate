@@ -33,15 +33,15 @@ importers:
 
   packages/cli:
     dependencies:
+      '@bluslate/core':
+        specifier: workspace:*
+        version: link:../core
       '@ffprobe-installer/ffprobe':
         specifier: ^2.1.0
         version: 2.1.2
       '@inquirer/prompts':
         specifier: ^8.2.0
         version: 8.2.0(@types/node@25.2.1)
-      '@mediafetch/core':
-        specifier: workspace:*
-        version: link:../core
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -83,6 +83,9 @@ importers:
 
   packages/gui:
     dependencies:
+      '@bluslate/core':
+        specifier: workspace:*
+        version: link:../core
       '@electron-toolkit/preload':
         specifier: ^3.0.2
         version: 3.0.2(electron@35.7.5)
@@ -92,9 +95,6 @@ importers:
       '@ffprobe-installer/ffprobe':
         specifier: ^2.1.0
         version: 2.1.2
-      '@mediafetch/core':
-        specifier: workspace:*
-        version: link:../core
     devDependencies:
       '@electron-toolkit/tsconfig':
         specifier: ^1.0.1
