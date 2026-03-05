@@ -2,6 +2,10 @@
  * Web API adapter — implements the same window.api interface as the Electron
  * preload script, but uses Socket.IO for real-time events and fetch for
  * request/response operations.
+ *
+ * When a password is provided (BLUSLATE_PASSWORD is set on the server) it:
+ *  - Passes it as the Socket.IO auth handshake token
+ *  - Adds an Authorization: Basic header to every fetch request
  */
 
 import { io, type Socket } from 'socket.io-client';
@@ -16,8 +20,24 @@ export function resolveDirectorySelection(path: string | null): void {
   }
 }
 
-export function createWebApi(): Window['api'] {
-  const socket: Socket = io({ transports: ['websocket'] });
+function buildAuthHeader(password: string): string {
+  // RFC 7617: Basic auth — username is empty, password only
+  return 'Basic ' + btoa(':' + password);
+}
+
+function authFetch(url: string, password: string | undefined, init: RequestInit = {}): Promise<Response> {
+  if (!password) return fetch(url, init);
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', buildAuthHeader(password));
+  return fetch(url, { ...init, headers });
+}
+
+export function createWebApi(password?: string): Window['api'] {
+  const socketOpts = password
+    ? { transports: ['websocket'], auth: { password } }
+    : { transports: ['websocket'] };
+
+  const socket: Socket = io(socketOpts);
 
   function on<T>(event: string, callback: (data: T) => void): () => void {
     socket.on(event, callback);
@@ -29,7 +49,6 @@ export function createWebApi(): Window['api'] {
     selectDirectory(): Promise<string | null> {
       return new Promise((resolve) => {
         directoryResolve = resolve;
-        // The DirectoryPicker component will detect this and open the browser modal
         window.dispatchEvent(new CustomEvent('bluslate:openDirectoryBrowser'));
       });
     },
@@ -103,7 +122,7 @@ export function createWebApi(): Window['api'] {
 
     // --- Request/response via HTTP fetch ---
     async regenerateFilenames(items) {
-      const res = await fetch('/api/regenerate-filenames', {
+      const res = await authFetch('/api/regenerate-filenames', password, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
@@ -112,7 +131,7 @@ export function createWebApi(): Window['api'] {
       return data.filenames;
     },
     async undoRenames(directory) {
-      const res = await fetch('/api/undo', {
+      const res = await authFetch('/api/undo', password, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ directory }),
@@ -120,23 +139,23 @@ export function createWebApi(): Window['api'] {
       return res.json();
     },
     async checkFfprobe() {
-      const res = await fetch('/api/ffprobe/check');
+      const res = await authFetch('/api/ffprobe/check', password);
       const data = await res.json();
       return data.available;
     },
     async loadSettings() {
-      const res = await fetch('/api/settings');
+      const res = await authFetch('/api/settings', password);
       return res.json();
     },
     async saveApiKey(apiKey) {
-      await fetch('/api/settings/api-key', {
+      await authFetch('/api/settings/api-key', password, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey }),
       });
     },
     async getRecentDirectories() {
-      const res = await fetch('/api/settings/recent-directories');
+      const res = await authFetch('/api/settings/recent-directories', password);
       const data = await res.json();
       return data.directories;
     },

@@ -119,7 +119,21 @@ services:
 | `BLUSLATE_LANGUAGE` | No | `en-US` | BCP 47 language code for TMDb metadata |
 | `BLUSLATE_TEMPLATE` | No | `{show_name} - S{season}E{episode} - {episode_title}` | Default naming template |
 | `BLUSLATE_MIN_CONFIDENCE` | No | `85` | Minimum confidence score (0–100) to auto-accept |
+| `BLUSLATE_PASSWORD` | No | — | Enable password auth (see security note below) |
 | `PORT` | No | `3000` | Port the server listens on inside the container |
+
+> [!WARNING]
+> **The web server has no authentication by default.** Anyone who can reach port 3000 can rename your media files and read your TMDb API key. Never expose BluSlate directly to the internet without protection.
+>
+> **Option 1 — Password auth (built-in):** Set `BLUSLATE_PASSWORD` in your environment. The browser will prompt for the password on first visit and store it for the session.
+> ```yaml
+> environment:
+>   - BLUSLATE_PASSWORD=a-strong-random-password
+> ```
+>
+> **Option 2 — Reverse proxy:** Run BluSlate behind Nginx, Caddy, or Traefik with authentication and TLS. This is recommended for internet-facing deployments.
+>
+> **Option 3 — Keep it local:** Run BluSlate only on your home network and do not forward port 3000 through your router.
 
 ## Naming Templates
 
