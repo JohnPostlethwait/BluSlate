@@ -1,19 +1,28 @@
-# BluSlate
+# <img src="packages/gui/resources/icon.png" width="30" /> BluSlate
 
-Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.org/) metadata. Available as both a CLI and an Electron desktop app.
+Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.org/) and [DVDCompare.net](https://www.dvdcompare.net/) metadata.
+
+Available as a CLI app, a website, a website in a Docker container, or a local Desktop app on any platform (Electron) – run it however you want to!
+
+## Why Another Media Scraping App?
+
+This is the only app that allows initial batch file naming based on show runtime information. All other media scraping applications were created for already well strucuted files – _heavily_ relying on sequential file orders already being correct.
+When ripping DVDs and BluRay disks the files are not always in such nice order. Sometimes they are reverse-chronological, sometimes, they are random. The file order is not enough when trying to organize show rips.
+
+This application fills that gap. It helps you get those initial episode and special names correct so that the other tools such as tinyMediaManager can sanely identify and scrape the rest of the media information.
 
 ## Features
 
-- **TMDb matching** — Search and match files against The Movie Database for accurate episode metadata
-- **Batch disc rip support** — Handles generic MakeMKV filenames (`title_t00.mkv`) by matching runtimes against TMDb episode data
-- **DVDCompare integration** — Augments matching with sub-second disc runtime data from DVDCompare.com
+- **TMDb Episode Matching** — Search and match files against The Movie Database for accurate episode metadata
+- **[DVDCompare.net](https://www.dvdcompare.net/) Integration** — Augments matching with sub-second disc runtime data from DVDCompare.net
+- **Batch disc ripping support** — Handles generic MakeMKV filenames (`title_t00.mkv`) by matching runtimes against TMDb and DVDcompare episode data
 - **ffprobe runtime detection** — Probes file durations for runtime-based matching (gracefully degrades if unavailable)
 - **Confidence scoring** — Each match is scored (0-100) based on title similarity, runtime proximity, and positional alignment
 - **Custom naming templates** — Configurable output format with placeholders for show name, season, episode, title, year, and extension
 - **Dry-run mode** — Preview all renames before committing changes
 - **Undo support** — Reverse renames using a saved manifest
 - **Specials detection** — Unmatched files are automatically matched against TMDb Season 0 (Specials)
-- **Cross-platform** — macOS, Windows, and Linux
+- **Cross-platform** — Docker, macOS, Windows, and Linux
 
 ## Prerequisites
 
