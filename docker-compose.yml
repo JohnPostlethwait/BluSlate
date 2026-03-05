@@ -1,0 +1,17 @@
+services:
+  bluslate:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - /path/to/media:/media
+      - bluslate-data:/data
+    environment:
+      - TMDB_API_KEY=your-key-here
+      # - BLUSLATE_LANGUAGE=en-US
+      # - BLUSLATE_TEMPLATE={show_name} - S{season}E{episode} - {episode_title}
+      # - BLUSLATE_MIN_CONFIDENCE=85
+    restart: unless-stopped
+
+volumes:
+  bluslate-data:

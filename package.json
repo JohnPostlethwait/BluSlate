@@ -12,7 +12,11 @@
     "typecheck": "pnpm -r run typecheck",
     "start": "pnpm --filter @bluslate/cli run start",
     "generate-icon": "node scripts/generate-icon.mjs",
-    "package:gui": "pnpm --filter @bluslate/core run build && pnpm --filter @bluslate/gui run build && pnpm --filter @bluslate/gui run package"
+    "package:gui": "pnpm --filter @bluslate/core run build && pnpm --filter @bluslate/gui run build && pnpm --filter @bluslate/gui run package",
+    "dev:web": "pnpm --filter @bluslate/web run dev",
+    "build:web": "pnpm --filter @bluslate/core run build && pnpm --filter @bluslate/web run build",
+    "docker:build": "docker build -t bluslate .",
+    "docker:run": "docker run -p 3000:3000 -v /path/to/media:/media bluslate"
   },
   "engines": {
     "node": ">=22.0.0"

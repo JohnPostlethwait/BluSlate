@@ -27,26 +27,14 @@
   let recursive = $state<boolean>(false);
   let dryRun = $state<boolean>(false);
   let language = $state<string>('en-US');
+  let minConfidence = $state<number>(85);
+  let template = $state<string | undefined>(undefined);
 
   // When true, ignore all pipeline IPC events (user cancelled mid-pipeline)
   let ignoreEvents = $state(false);
 
   // Cleanup functions for IPC listeners
   let cleanups: (() => void)[] = [];
-
-  // Prevent Vite dev server HMR from doing a full page reload during active
-  // sessions. When the computer sleeps, the WebSocket connection drops and
-  // reconnects on wake — Vite may trigger a full reload which resets all
-  // $state() back to 'setup', losing the user's results.
-  if (import.meta.hot) {
-    import.meta.hot.on('vite:beforeFullReload', () => {
-      if (currentView !== 'setup') {
-        // Block the reload — throwing prevents Vite's client from calling
-        // location.reload(). The user's view and data are preserved.
-        throw '[BluSlate] Blocked HMR full reload during active session';
-      }
-    });
-  }
 
   onMount(async () => {
     const api = window.api;
@@ -59,6 +47,15 @@
       }
       if (settings.recentDirectories?.length > 0) {
         savedDirectory = settings.recentDirectories[0];
+      }
+      if (settings.language) {
+        language = settings.language;
+      }
+      if (settings.minConfidence != null) {
+        minConfidence = settings.minConfidence;
+      }
+      if (settings.template) {
+        template = settings.template;
       }
     } catch {
       // Settings not available yet, that's OK
@@ -166,7 +163,8 @@
       recursive: event.recursive,
       language,
       autoAccept: false,
-      minConfidence: 85,
+      minConfidence,
+      template,
     });
   }
 

@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+**/dist
+packages/cli
+packages/gui
+.claude
+.git
+*.log
+tests
