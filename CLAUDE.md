@@ -43,6 +43,9 @@ pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch --filter @medi
 # Package GUI for distribution
 pnpm --dir /Users/johnpostlethwait/Documents/workspace/MediaFetch run package:gui
 
+# Install GUI to /Applications (must kill running instances, remove old app, and clear xattr to avoid macOS caching stale bundles)
+pkill -f MediaFetch 2>/dev/null; sleep 1; rm -rf /Applications/MediaFetch.app && cp -R /Users/johnpostlethwait/Documents/workspace/MediaFetch/packages/gui/release/mac-arm64/MediaFetch.app /Applications/MediaFetch.app && /usr/bin/xattr -cr /Applications/MediaFetch.app
+
 # Git commands (cwd resets, so use -C)
 git -C /Users/johnpostlethwait/Documents/workspace/MediaFetch status
 ```

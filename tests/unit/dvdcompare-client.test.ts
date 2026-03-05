@@ -429,6 +429,41 @@ describe('parseComparisonPage', () => {
     expect(discs[0].episodes[1].title).toBe('Grilled');
   });
 
+  it('should parse annotated disc headers like "DISC ONE (Season 1)"', () => {
+    // Some DVDCompare pages annotate disc headers with season info,
+    // e.g., Seinfeld DVD (fid=6571) uses <b>DISC ONE (Season 1)</b>
+    const html = `
+      <div class="description">
+        <b>DISC ONE (Season 1)</b>
+        <br />Episodes (with Play All)
+        <br />- "Male-Unbonding" (23:01)
+        <br />- "The Stake Out" (22:59)
+        <br />- "The Robbery" (23:01)
+        <br />- "The Stock Tip" (22:59)
+        <br />Audio commentary on "The Stake Out"
+        <b>DISC TWO (Season 2)</b>
+        <br />Episodes (with Play All)
+        <br />- "The Ex-Girlfriend" (22:57)
+        <br />- "The Pony Remark" (22:59)
+        <br />- "The Busboy" (23:01)
+      </div>
+    `;
+
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(2);
+
+    expect(discs[0].discNumber).toBe(1);
+    expect(discs[0].discLabel).toBe('DISC ONE');
+    expect(discs[0].episodes).toHaveLength(4);
+    expect(discs[0].episodes[0].title).toBe('Male-Unbonding');
+    expect(discs[0].episodes[0].runtimeSeconds).toBe(23 * 60 + 1);
+
+    expect(discs[1].discNumber).toBe(2);
+    expect(discs[1].discLabel).toBe('DISC TWO');
+    expect(discs[1].episodes).toHaveLength(3);
+    expect(discs[1].episodes[0].title).toBe('The Ex-Girlfriend');
+  });
+
   it('should handle real-world TNG Season 1 disc structure', () => {
     // Simulates the actual DVDCompare page for Star Trek TNG S1
     const html = `

@@ -68,6 +68,9 @@
             {/if}
             &middot; {formatType(candidate)}
           </p>
+          {#if candidate.episodeCount === 0}
+            <p class="no-runtimes-warning">No episode runtimes available</p>
+          {/if}
         </div>
       </label>
     {/each}
@@ -228,6 +231,12 @@
     color: #888;
     font-size: 0.8rem;
     margin: 0;
+  }
+
+  .no-runtimes-warning {
+    color: #cc4444;
+    font-size: 0.75rem;
+    margin: 4px 0 0;
   }
 
   .btn-skip {

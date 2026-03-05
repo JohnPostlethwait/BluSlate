@@ -93,4 +93,5 @@ interface DvdCompareCandidate {
   title: string;
   years: string;
   isBluray: boolean;
+  episodeCount?: number;
 }

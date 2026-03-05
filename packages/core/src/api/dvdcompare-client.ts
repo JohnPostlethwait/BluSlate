@@ -44,6 +44,8 @@ export interface DvdCompareSearchResult {
   title: string;
   years: string;
   isBluray: boolean;
+  /** Number of episodes with runtime data. Set after pre-fetching the comparison page. */
+  episodeCount?: number;
 }
 
 // ── Disc label → number mapping ──────────────────────────────────────
@@ -230,9 +232,10 @@ export function parseComparisonPage(html: string): DvdCompareDisc[] {
   // decodeResponse() (live) or was passed directly (tests).
   html = normalizeText(html);
 
-  // Split by disc headers: <b>DISC ONE</b>, <b>DISC TWO</b>, etc.
+  // Split by disc headers: <b>DISC ONE</b>, <b>DISC ONE (Season 1)</b>, etc.
+  // [^<]* allows optional annotations like "(Season 1)" before the closing </b>.
   // Only match the FIRST occurrence of each disc (pages repeat data for each region)
-  const discPattern = /<b>(DISC\s+(?:ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|\d+))<\/b>(.*?)(?=<b>DISC\s|<b>BONUS\s|<\/div>)/gis;
+  const discPattern = /<b>(DISC\s+(?:ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|\d+))[^<]*<\/b>(.*?)(?=<b>DISC\s|<b>BONUS\s|<\/div>)/gis;
   const seenDiscs = new Set<string>();
   let discMatch;
 

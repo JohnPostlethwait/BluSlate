@@ -4,6 +4,7 @@ import { executeRenames, writeRenameLog } from './renamer.js';
 import { groupFilesBySeason } from './directory-parser.js';
 import { identifyShow, classifyAndSortFiles, matchSeasonBatch, matchSpecialsBatch } from './batch-matcher.js';
 import { searchDvdCompare, fetchDiscEpisodeData } from '../api/dvdcompare-client.js';
+import type { DvdCompareResult } from '../api/dvdcompare-client.js';
 import { TmdbClient } from '../api/tmdb-client.js';
 import { PLAY_ALL_DURATION_MULTIPLIER, PLAY_ALL_SIZE_MULTIPLIER } from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
@@ -207,25 +208,43 @@ async function runBatchPipeline(
       const searchResults = await searchDvdCompare(dvdSearchName);
 
       if (searchResults.length > 0) {
-        ui.progress.succeed(
-          `DVDCompare: found ${searchResults.length} result(s) (${searchResults.filter((r) => r.isBluray).length} Blu-ray)`,
+        // Pre-fetch all comparison pages in parallel to annotate results
+        // with episode counts before presenting to the user
+        ui.progress.update(`Checking DVDCompare releases for "${dvdSearchName}"...`);
+        const prefetchMap = new Map<number, DvdCompareResult | null>();
+        const prefetchResults = await Promise.all(
+          searchResults.map(async (sr) => {
+            const data = await fetchDiscEpisodeData(sr.fid);
+            const totalEps = data?.discs.reduce((sum, d) => sum + d.episodes.length, 0) ?? 0;
+            sr.episodeCount = totalEps;
+            prefetchMap.set(sr.fid, data);
+            return data;
+          }),
         );
+
+        const withRuntimes = searchResults.filter((r) => (r.episodeCount ?? 0) > 0).length;
+        ui.progress.succeed(
+          `DVDCompare: found ${searchResults.length} result(s) (${withRuntimes} with episode runtimes)`,
+        );
+
+        // Sort: results with runtimes first, then those without
+        searchResults.sort((a, b) => {
+          // Group by has-runtimes first, then alphabetical by title
+          const aHas = (a.episodeCount ?? 0) > 0 ? 1 : 0;
+          const bHas = (b.episodeCount ?? 0) > 0 ? 1 : 0;
+          if (bHas !== aHas) return bHas - aHas;
+          return a.title.localeCompare(b.title);
+        });
 
         // Let the user select one or more DVDCompare results
         const selectedResults = await ui.prompts.confirmDvdCompareSelection(dvdSearchName, searchResults);
 
         if (selectedResults.length > 0) {
-          // Fetch disc data from all selected results and merge
+          // Use pre-fetched disc data from selected results
           const allDiscs: DvdCompareDisc[] = [];
 
           for (const selectedResult of selectedResults) {
-            logger.batch(
-              `DVDCompare: fetching "${selectedResult.title}" (fid=${selectedResult.fid}, ` +
-              `${selectedResult.isBluray ? 'Blu-ray' : 'DVD'})`,
-            );
-
-            ui.progress.start(`Fetching DVDCompare disc data for "${selectedResult.title}"...`);
-            const dvdData = await fetchDiscEpisodeData(selectedResult.fid);
+            const dvdData = prefetchMap.get(selectedResult.fid);
             if (dvdData?.discs) {
               allDiscs.push(...dvdData.discs);
             }

@@ -288,8 +288,9 @@ export async function confirmDvdCompareSelection(
     const choices = remaining.map((c) => {
       const type = c.isBluray ? chalk.blue('Blu-ray') : chalk.yellow('DVD');
       const years = c.years ? ` (${c.years})` : '';
+      const warning = c.episodeCount === 0 ? chalk.red(' (no episode runtimes)') : '';
       return {
-        name: `${c.title}${years} — ${type}`,
+        name: `${c.title}${years} — ${type}${warning}`,
         value: c.fid,
       };
     });
