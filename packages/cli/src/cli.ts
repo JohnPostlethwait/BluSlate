@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { createRequire } from 'node:module';
 import { buildConfig, saveApiKey, setFfprobePath, isFfprobeAvailable } from '@bluslate/core';
 import { runPipeline } from '@bluslate/core';
 import { setVerbose } from '@bluslate/core';
@@ -6,13 +7,15 @@ import chalk from 'chalk';
 import { promptForApiKey } from './ui/prompts.js';
 import { createCliAdapter } from './ui/cli-adapter.js';
 
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+
 export function createProgram(): Command {
   const program = new Command();
 
   program
     .name('bluslate')
     .description('Rename TV show files using TMDb metadata')
-    .version('0.1.0')
+    .version(version)
     .argument('<directory>', 'Directory containing media files to rename')
     .option('-n, --dry-run', 'Preview changes without renaming', false)
     .option('-k, --api-key <key>', 'TMDb API Read Access Token')
