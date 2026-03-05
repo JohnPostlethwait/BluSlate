@@ -1,6 +1,6 @@
 {
   "name": "@bluslate/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Core business logic for BluSlate — media file matching and renaming using TMDb",
   "type": "module",
   "main": "./dist/index.js",

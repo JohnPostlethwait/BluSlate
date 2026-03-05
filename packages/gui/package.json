@@ -1,6 +1,6 @@
 {
   "name": "@bluslate/gui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Desktop GUI for BluSlate — rename TV show files using TMDb metadata",
   "main": "./out/main/index.js",
   "type": "module",
