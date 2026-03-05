@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * Generate the BluSlate placeholder app icon.
+ * Generate the BluSlate app icon.
  *
- * Renders an SVG (dark gradient rounded-rect + bold white "B") into a
- * 1024x1024 PNG at packages/gui/resources/icon.png.
+ * Renders an SVG (dark background, centered disc rings, large white-to-blue
+ * gradient "B") into a 1024x1024 PNG at packages/gui/resources/icon.png.
  *
  * electron-builder automatically converts this PNG into:
  *   - .icns for macOS
@@ -18,7 +18,7 @@
  */
 
 import sharp from 'sharp';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,40 +31,46 @@ const SIZE = 1024;
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${SIZE}" height="${SIZE}">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e293b"/>
-      <stop offset="50%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#1a1a2e"/>
+      <stop offset="0%" stop-color="#020617"/>
+      <stop offset="100%" stop-color="#0f172a"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#60a5fa"/>
-      <stop offset="100%" stop-color="#a78bfa"/>
+    <linearGradient id="blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
     </linearGradient>
   </defs>
-  <!-- Background rounded-rect -->
-  <rect width="${SIZE}" height="${SIZE}" rx="200" ry="200" fill="url(#bg)"/>
-  <!-- Subtle inner border -->
-  <rect x="20" y="20" width="${SIZE - 40}" height="${SIZE - 40}" rx="185" ry="185"
-        fill="none" stroke="url(#accent)" stroke-width="4" opacity="0.3"/>
-  <!-- Film-reel accent strip at top -->
-  <rect x="180" y="140" width="664" height="8" rx="4" fill="url(#accent)" opacity="0.5"/>
-  <!-- Bold "B" letter -->
-  <text x="512" y="700"
+  <!-- Background -->
+  <rect width="${SIZE}" height="${SIZE}" rx="220" ry="220" fill="url(#bg)"/>
+  <!-- Glow -->
+  <circle cx="512" cy="512" r="450" fill="url(#glow)"/>
+  <!-- Disc — true center, large, subtle fill to distinguish from bg -->
+  <circle cx="512" cy="512" r="430" fill="#0a1a30" stroke="url(#blue)" stroke-width="4" opacity="0.6"/>
+  <circle cx="512" cy="512" r="390" fill="none" stroke="#3b82f6" stroke-width="1" opacity="0.12"/>
+  <circle cx="512" cy="512" r="350" fill="none" stroke="#3b82f6" stroke-width="1" opacity="0.15"/>
+  <circle cx="512" cy="512" r="310" fill="none" stroke="#60a5fa" stroke-width="1" opacity="0.18"/>
+  <circle cx="512" cy="512" r="270" fill="none" stroke="#60a5fa" stroke-width="1" opacity="0.22"/>
+  <circle cx="512" cy="512" r="230" fill="none" stroke="#93c5fd" stroke-width="1" opacity="0.25"/>
+  <circle cx="512" cy="512" r="190" fill="none" stroke="#93c5fd" stroke-width="1.2" opacity="0.28"/>
+  <circle cx="512" cy="512" r="150" fill="none" stroke="#93c5fd" stroke-width="1.2" opacity="0.3"/>
+  <circle cx="512" cy="512" r="110" fill="none" stroke="#bfdbfe" stroke-width="1" opacity="0.3"/>
+  <!-- Center hole -->
+  <circle cx="512" cy="512" r="40" fill="#020617" stroke="#3b82f6" stroke-width="2.5" opacity="0.7"/>
+  <!-- Large B — white-to-blue gradient, bottom-right -->
+  <text x="688" y="947"
         text-anchor="middle"
         font-family="'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
-        font-size="560"
+        font-size="875"
         font-weight="800"
-        fill="#f1f5f9"
-        letter-spacing="-20">B</text>
-  <!-- Subtle "s" subscript for "BluSlate" -->
-  <text x="740" y="780"
-        text-anchor="middle"
-        font-family="'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
-        font-size="180"
-        font-weight="300"
-        fill="url(#accent)"
-        opacity="0.7">s</text>
-  <!-- Film-reel accent strip at bottom -->
-  <rect x="180" y="876" width="664" height="8" rx="4" fill="url(#accent)" opacity="0.5"/>
+        fill="url(#bGrad)">B</text>
 </svg>`;
 
 async function main() {
