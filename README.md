@@ -88,18 +88,27 @@ bluslate --template '{show_name} {season}x{episode}' /media/tv
 
 ### Docker (self-hosted web app)
 
+Pre-built images are published to [GitHub Container Registry](https://ghcr.io/johnpostlethwait/bluslate) on every release.
+
 ```bash
-docker compose up
+docker run -d \
+  -p 3000:3000 \
+  -v /path/to/media:/media \
+  -v bluslate-data:/data \
+  -e TMDB_API_KEY=your-key-here \
+  ghcr.io/johnpostlethwait/bluslate:latest
 ```
 
 Then open [http://localhost:3000](http://localhost:3000) in your browser.
 
-Configure by editing `docker-compose.yml`:
+#### Docker Compose
+
+Create a `docker-compose.yml`:
 
 ```yaml
 services:
   bluslate:
-    build: .
+    image: ghcr.io/johnpostlethwait/bluslate:latest
     ports:
       - "3000:3000"
     volumes:
@@ -111,7 +120,17 @@ services:
       # - BLUSLATE_TEMPLATE={show_name} - S{season}E{episode} - {episode_title}
       # - BLUSLATE_MIN_CONFIDENCE=85
     restart: unless-stopped
+
+volumes:
+  bluslate-data:
 ```
+
+```bash
+docker compose up -d
+```
+
+> [!TIP]
+> To pin to a specific version, replace `latest` with a version tag (e.g., `ghcr.io/johnpostlethwait/bluslate:0.2.2`). To build from source instead, replace `image:` with `build: .` and clone the repo.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
