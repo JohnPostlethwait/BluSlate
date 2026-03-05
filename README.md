@@ -31,7 +31,21 @@ This application fills that gap. It helps you get those initial episode and spec
 - **ffprobe** (optional, strongly recommended) — Install via [ffmpeg](https://ffmpeg.org/download.html). The CLI bundles ffprobe automatically; the GUI includes it in packaged builds.
 - **TMDb API key** — Free. Get a Read Access Token at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
 
-## Installation
+## Download
+
+Pre-built installers for every platform are available on the [GitHub Releases page](https://github.com/JohnPostlethwait/BluSlate/releases):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `BluSlate-x.x.x-arm64.dmg` |
+| macOS (Intel) | `BluSlate-x.x.x-x64.dmg` |
+| Windows | `BluSlate-x.x.x-setup.exe` |
+| Linux (AppImage) | `BluSlate-x.x.x-x86_64.AppImage` |
+| Linux (Debian/Ubuntu) | `BluSlate-x.x.x-amd64.deb` |
+
+Download the installer for your platform, open it, and drag BluSlate to your Applications folder (macOS) or run the installer (Windows/Linux). No build step required.
+
+## Installation (from source)
 
 ```bash
 git clone https://github.com/JohnPostlethwait/BluSlate.git
