@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  shouldUseBatchMode,
   parseDirectoryContext,
   groupFilesBySeason,
   extractTrackNumber,
@@ -11,8 +10,6 @@ import {
   sguSeason1Disc1Files,
   sguSeason2Disc1Files,
   alternateStructureFiles,
-  normalFiles,
-  mixedFiles,
   blurayStreamFiles,
   dvdVtsFiles,
   discOnlyFiles,
@@ -22,70 +19,6 @@ import {
   dvdVolumeLabelFiles,
   showPrefixedSeasonDiscFiles,
 } from '../fixtures/directories.js';
-
-describe('shouldUseBatchMode', () => {
-  it('should return true for all generic filenames (MakeMKV output)', () => {
-    expect(shouldUseBatchMode(allSguFiles)).toBe(true);
-  });
-
-  it('should return false for normal filenames with S##E## patterns', () => {
-    expect(shouldUseBatchMode(normalFiles)).toBe(false);
-  });
-
-  it('should return false for mixed files below 70% threshold', () => {
-    // 1 generic out of 4 = 25%
-    expect(shouldUseBatchMode(mixedFiles)).toBe(false);
-  });
-
-  it('should return false for empty file list', () => {
-    expect(shouldUseBatchMode([])).toBe(false);
-  });
-
-  it('should detect VTS and stream patterns as generic', () => {
-    const vtsFiles = [
-      { filePath: '/media/VTS_01_1.mkv', fileName: 'VTS_01_1.mkv', extension: '.mkv', sizeBytes: 1000 },
-      { filePath: '/media/stream0.mkv', fileName: 'stream0.mkv', extension: '.mkv', sizeBytes: 1000 },
-      { filePath: '/media/clip001.mkv', fileName: 'clip001.mkv', extension: '.mkv', sizeBytes: 1000 },
-    ];
-    expect(shouldUseBatchMode(vtsFiles)).toBe(true);
-  });
-
-  it('should detect BluRay .m2ts stream files as generic', () => {
-    expect(shouldUseBatchMode(blurayStreamFiles)).toBe(true);
-  });
-
-  it('should detect DVD VTS files as generic', () => {
-    expect(shouldUseBatchMode(dvdVtsFiles)).toBe(true);
-  });
-
-  it('should detect flat rip title_t## files as generic', () => {
-    expect(shouldUseBatchMode(flatRipFiles)).toBe(true);
-  });
-
-  it('should detect title-t## (hyphen) variant as generic', () => {
-    const files = [
-      { filePath: '/media/title-t00.mkv', fileName: 'title-t00.mkv', extension: '.mkv', sizeBytes: 1000 },
-      { filePath: '/media/title-t01.mkv', fileName: 'title-t01.mkv', extension: '.mkv', sizeBytes: 1000 },
-    ];
-    expect(shouldUseBatchMode(files)).toBe(true);
-  });
-
-  it('should detect chapter## pattern as generic', () => {
-    const files = [
-      { filePath: '/media/chapter01.mkv', fileName: 'chapter01.mkv', extension: '.mkv', sizeBytes: 1000 },
-      { filePath: '/media/chapter02.mkv', fileName: 'chapter02.mkv', extension: '.mkv', sizeBytes: 1000 },
-    ];
-    expect(shouldUseBatchMode(files)).toBe(true);
-  });
-
-  it('should detect numbers-only filenames (BluRay streams ripped) as generic', () => {
-    const files = [
-      { filePath: '/media/00001.mkv', fileName: '00001.mkv', extension: '.mkv', sizeBytes: 1000 },
-      { filePath: '/media/00002.mkv', fileName: '00002.mkv', extension: '.mkv', sizeBytes: 1000 },
-    ];
-    expect(shouldUseBatchMode(files)).toBe(true);
-  });
-});
 
 describe('parseDirectoryContext', () => {
   it('should extract show name from scan root and season/disc from SGU_BR_S1D1', () => {

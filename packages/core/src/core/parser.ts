@@ -20,6 +20,10 @@ const PATTERNS = {
   movieYearDots: /^(.+?)[\s._-]+(\d{4})[\s._-]/,
 };
 
+function stripExtension(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '');
+}
+
 function cleanTitle(raw: string): string {
   return raw
     .replace(/[._]/g, ' ')
@@ -86,7 +90,7 @@ function parseWithLibrary(filename: string): ParsedFilename | null {
 
 function parseWithFallback(filename: string): ParsedFilename | null {
   // Remove extension for matching
-  const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+  const nameWithoutExt = stripExtension(filename);
 
   // Try 1x02 format
   let match = nameWithoutExt.match(PATTERNS.crossFormat);
@@ -151,7 +155,7 @@ export function parseFilename(filename: string): ParsedFilename {
 
   // Check for air date format first (before library), since the library
   // would misidentify the year portion as a movie year
-  const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+  const nameWithoutExt = stripExtension(filename);
   const airDateMatch = nameWithoutExt.match(PATTERNS.airDate);
   if (airDateMatch) {
     const result: ParsedFilename = {
@@ -184,7 +188,7 @@ export function parseFilename(filename: string): ParsedFilename {
   }
 
   // Last resort: use the entire filename (minus extension) as the title
-  const title = cleanTitle(filename.replace(/\.[^.]+$/, ''));
+  const title = cleanTitle(stripExtension(filename));
   logger.warn(`Could not parse filename, using raw title: "${title}"`);
   return {
     mediaType: MediaType.Unknown,

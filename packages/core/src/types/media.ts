@@ -79,17 +79,6 @@ export interface ProbeResult {
   format?: string;
 }
 
-export interface ProcessingResult {
-  file: MediaFile;
-  status: 'success' | 'skipped' | 'error';
-  match?: MatchResult;
-  error?: {
-    phase: 'scan' | 'parse' | 'probe' | 'search' | 'match' | 'rename';
-    message: string;
-    recoverable: boolean;
-  };
-}
-
 export interface DirectoryContext {
   showName: string;
   season?: number;

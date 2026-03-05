@@ -5,11 +5,6 @@
  * scorer, pipeline, directory-parser, and matcher modules.
  */
 
-// ── Batch mode activation ────────────────────────────────────────────
-
-/** Ratio of generic (non-parseable) filenames that triggers batch mode */
-export const BATCH_MODE_GENERIC_RATIO = 0.7;
-
 // ── Episode classification ───────────────────────────────────────────
 
 /** Minimum ratio of expected runtime for a file to classify as episode */
@@ -30,9 +25,6 @@ export const MULTI_EPISODE_RUNTIME_MULTIPLIER = 1.7;
 export const MULTI_EPISODE_COMBINED_TOLERANCE_MIN = 5;
 
 // ── DVDCompare matching ──────────────────────────────────────────────
-
-/** Maximum runtime drift (seconds) for DVDCompare-to-file match */
-export const DVDCOMPARE_RUNTIME_TOLERANCE_SEC = 3;
 
 /** Minimum title similarity for DVDCompare episode-to-TMDb mapping */
 export const DVDCOMPARE_TITLE_SIMILARITY_MIN = 0.6;

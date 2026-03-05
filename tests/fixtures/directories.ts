@@ -31,7 +31,7 @@ export const sguSeason1Disc1Files: MediaFile[] = [
   makeFile('SGU_BR_S1D1', 'title_t03.mkv', 350_000_000),
 ];
 
-export const sguSeason1Disc2Files: MediaFile[] = [
+const sguSeason1Disc2Files: MediaFile[] = [
   makeFile('SGU_BR_S1D2', 'title_t00.mkv', 4_800_000_000),
   makeFile('SGU_BR_S1D2', 'title_t01.mkv', 4_100_000_000),
 ];
@@ -69,56 +69,6 @@ export const alternateStructureFiles: MediaFile[] = [
   },
 ];
 
-// Files with normal (non-generic) filenames — should NOT trigger batch mode
-export const normalFiles: MediaFile[] = [
-  {
-    filePath: '/media/shows/Breaking.Bad.S01E01.720p.BluRay.mkv',
-    fileName: 'Breaking.Bad.S01E01.720p.BluRay.mkv',
-    extension: '.mkv',
-    sizeBytes: 2_000_000_000,
-  },
-  {
-    filePath: '/media/shows/Breaking.Bad.S01E02.720p.BluRay.mkv',
-    fileName: 'Breaking.Bad.S01E02.720p.BluRay.mkv',
-    extension: '.mkv',
-    sizeBytes: 2_100_000_000,
-  },
-  {
-    filePath: '/media/shows/Breaking.Bad.S01E03.720p.BluRay.mkv',
-    fileName: 'Breaking.Bad.S01E03.720p.BluRay.mkv',
-    extension: '.mkv',
-    sizeBytes: 1_900_000_000,
-  },
-];
-
-// Mixed: some generic, some not — under 70% threshold
-export const mixedFiles: MediaFile[] = [
-  {
-    filePath: '/media/shows/title_t00.mkv',
-    fileName: 'title_t00.mkv',
-    extension: '.mkv',
-    sizeBytes: 1_000_000_000,
-  },
-  {
-    filePath: '/media/shows/Breaking.Bad.S01E01.720p.BluRay.mkv',
-    fileName: 'Breaking.Bad.S01E01.720p.BluRay.mkv',
-    extension: '.mkv',
-    sizeBytes: 2_000_000_000,
-  },
-  {
-    filePath: '/media/shows/Breaking.Bad.S01E02.720p.BluRay.mkv',
-    fileName: 'Breaking.Bad.S01E02.720p.BluRay.mkv',
-    extension: '.mkv',
-    sizeBytes: 2_100_000_000,
-  },
-  {
-    filePath: '/media/shows/Breaking.Bad.S01E03.720p.BluRay.mkv',
-    fileName: 'Breaking.Bad.S01E03.720p.BluRay.mkv',
-    extension: '.mkv',
-    sizeBytes: 1_900_000_000,
-  },
-];
-
 // ── Additional disc-rip directory structures ───────────────────────────
 
 // DVD rip with ALL_CAPS disc volume label as directory name
@@ -126,12 +76,6 @@ export const dvdVolumeLabelFiles: MediaFile[] = [
   makeFile('MODERN_FAMILY_SEASON1_DISC1', 'title_t00.mkv', 3_000_000_000),
   makeFile('MODERN_FAMILY_SEASON1_DISC1', 'title_t01.mkv', 3_200_000_000),
   makeFile('MODERN_FAMILY_SEASON1_DISC2', 'title_t00.mkv', 3_100_000_000),
-];
-
-// MakeMKV output with named disc metadata in filenames
-export const namedDiscFiles: MediaFile[] = [
-  makeFile('SGU_BR_S1D1', 'Arrow_Season_3_Disc_4_t00.mkv', 4_500_000_000),
-  makeFile('SGU_BR_S1D1', 'Arrow_Season_3_Disc_4_t01.mkv', 4_200_000_000),
 ];
 
 // BluRay m2ts files in BDMV/STREAM structure

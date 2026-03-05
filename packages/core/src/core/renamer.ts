@@ -104,13 +104,13 @@ export async function undoRenames(
 
   let restored = 0;
   let failed = 0;
+  const resolvedDir = path.resolve(directory);
 
   for (const entry of validRenames) {
     const currentPath = path.join(directory, entry.to);
     const originalPath = path.join(directory, entry.from);
 
     // Defense-in-depth: verify paths stay within directory
-    const resolvedDir = path.resolve(directory);
     if (
       !path.resolve(currentPath).startsWith(resolvedDir + path.sep) ||
       !path.resolve(originalPath).startsWith(resolvedDir + path.sep)

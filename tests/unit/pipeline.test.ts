@@ -147,7 +147,7 @@ describe('runPipeline', () => {
     vi.clearAllMocks();
   });
 
-  it('should scan directory and report file count', async () => {
+  it('should scan directory, report file count, and return early when no files found', async () => {
     mockedScanDirectory.mockResolvedValue([]);
     const ui = makeUIAdapter();
 
@@ -156,14 +156,6 @@ describe('runPipeline', () => {
     expect(mockedScanDirectory).toHaveBeenCalledWith('/media', false);
     expect(ui.progress.start).toHaveBeenCalledWith('Scanning for media files...');
     expect(ui.progress.succeed).toHaveBeenCalledWith('Found 0 media file(s)');
-  });
-
-  it('should return early when no media files found', async () => {
-    mockedScanDirectory.mockResolvedValue([]);
-    const ui = makeUIAdapter();
-
-    await runPipeline(makeConfig(), ui);
-
     expect(mockedGroupFilesBySeason).not.toHaveBeenCalled();
     expect(ui.display.displayResults).not.toHaveBeenCalled();
   });

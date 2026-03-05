@@ -1,23 +1,11 @@
 import * as path from 'node:path';
 import { parseFilename } from './parser.js';
-import { BATCH_MODE_GENERIC_RATIO } from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
-import { MediaType } from '../types/media.js';
 import type { MediaFile, DirectoryContext, SeasonGroup } from '../types/media.js';
 
-// Patterns to detect generic filenames (MakeMKV output, disc rips, etc.)
-const GENERIC_FILENAME_PATTERNS = [
-  /^title[_-]?t?\d+$/i,         // title_t00, title_t01, title00
-  /^title\d+$/i,                 // title00, title01
-  /^VTS_\d+/i,                   // DVD VOB rips: VTS_01_1
-  /^BDMV/i,                      // BluRay structure
-  /^stream\d*/i,                 // stream, stream0, stream1
-  /^chapter\d+/i,                // chapter01
-  /^clip\d+/i,                   // clip001
-  /^\d+$/,                       // Pure numeric: 00001, 00100 (BluRay streams ripped to .mkv)
-  /^[A-B]\d[_-]t\d+$/i,         // MakeMKV A/B menu prefix: A1_t00, B1_t01
-  /^VIDEO_TS/i,                  // HandBrake VIDEO_TS source fallback: "VIDEO_TS - 1"
-];
+function stripExtension(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '');
+}
 
 // Patterns to extract season/disc info from directory names
 const SEASON_DISC_PATTERNS: Array<{
@@ -113,40 +101,6 @@ const EXTRAS_DIRECTORY_PATTERNS: RegExp[] = [
   /^bloopers?$/i,
   /^making[\s_-]*of$/i,
 ];
-
-function isGenericFilename(fileName: string): boolean {
-  const nameWithoutExt = fileName.replace(/\.[^.]+$/, '');
-  return GENERIC_FILENAME_PATTERNS.some((pattern) => pattern.test(nameWithoutExt));
-}
-
-/**
- * Determine if the file set should use batch mode instead of per-file matching.
- * Returns true if >70% of files have generic/uninformative filenames.
- */
-export function shouldUseBatchMode(files: MediaFile[]): boolean {
-  if (files.length === 0) return false;
-
-  let genericCount = 0;
-
-  for (const file of files) {
-    // Check if filename is generic (MakeMKV output, etc.)
-    if (isGenericFilename(file.fileName)) {
-      genericCount++;
-      continue;
-    }
-
-    // Check if the parser can't identify the media type
-    const parsed = parseFilename(file.fileName);
-    if (parsed.mediaType === MediaType.Unknown) {
-      genericCount++;
-    }
-  }
-
-  const ratio = genericCount / files.length;
-  logger.batch(`Generic filename ratio: ${genericCount}/${files.length} (${(ratio * 100).toFixed(0)}%)`);
-
-  return ratio > BATCH_MODE_GENERIC_RATIO;
-}
 
 /**
  * Extract show name, season, and disc info from a file's directory path.
@@ -287,7 +241,7 @@ export function groupFilesBySeason(files: MediaFile[], scanRoot: string): Map<st
  * Extract a track/sort number from a generic filename like "title_t00.mkv"
  */
 export function extractTrackNumber(fileName: string): number {
-  const nameWithoutExt = fileName.replace(/\.[^.]+$/, '');
+  const nameWithoutExt = stripExtension(fileName);
   // Strip trailing parenthetical numbers — these are title indicators
   // like "Henry IV (2)", not MakeMKV track numbers like "title_t00"
   const cleaned = nameWithoutExt.replace(/\s*\(\d+\)\s*$/, '');
