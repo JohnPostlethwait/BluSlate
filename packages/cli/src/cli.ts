@@ -11,11 +11,10 @@ export function createProgram(): Command {
 
   program
     .name('mediafetch')
-    .description('Rename TV show and movie files using TMDb metadata')
+    .description('Rename TV show files using TMDb metadata')
     .version('0.1.0')
     .argument('<directory>', 'Directory containing media files to rename')
     .option('-n, --dry-run', 'Preview changes without renaming', false)
-    .option('-t, --type <type>', 'Force media type: tv, movie, or auto', 'auto')
     .option('-k, --api-key <key>', 'TMDb API Read Access Token')
     .option('--template <pattern>', 'Custom naming template')
     .option('-r, --recursive', 'Scan subdirectories', false)
@@ -39,7 +38,7 @@ API Key Resolution Order:
 
 Examples:
   $ mediafetch /path/to/tv/shows
-  $ mediafetch -r -n /media/movies
+  $ mediafetch -r -n /media/tv/show
   $ TMDB_API_KEY=your_token mediafetch /media/tv
   $ mediafetch --template '{show_name} {season}x{episode}' /media/tv`)
     .action(async (directory: string, options: Record<string, unknown>) => {
@@ -70,7 +69,6 @@ Examples:
           directory,
           apiKey: options['apiKey'] as string | undefined,
           dryRun: options['dryRun'] as boolean,
-          type: options['type'] as string,
           template: options['template'] as string | undefined,
           recursive: options['recursive'] as boolean,
           verbose: options['verbose'] as boolean,

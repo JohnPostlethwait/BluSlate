@@ -4,40 +4,34 @@ import { MediaType } from '../../packages/core/src/types/media.js';
 import type { TmdbMatchedItem } from '../../packages/core/src/types/media.js';
 
 describe('getTemplate', () => {
-  it('should return TV template for TV type', () => {
-    const template = getTemplate(MediaType.TV);
+  it('should return default TV template', () => {
+    const template = getTemplate();
     expect(template).toContain('{show_name}');
     expect(template).toContain('{season}');
     expect(template).toContain('{episode}');
   });
 
-  it('should return movie template for Movie type', () => {
-    const template = getTemplate(MediaType.Movie);
-    expect(template).toContain('{title}');
-    expect(template).toContain('{year}');
-  });
-
   it('should return custom template when provided', () => {
     const custom = '{title} - Custom';
-    expect(getTemplate(MediaType.TV, custom)).toBe(custom);
+    expect(getTemplate(custom)).toBe(custom);
   });
 
   it('should reject templates exceeding max length', () => {
     const longTemplate = '{title} ' + 'x'.repeat(500);
-    expect(() => getTemplate(MediaType.TV, longTemplate)).toThrow(/too long/);
+    expect(() => getTemplate(longTemplate)).toThrow(/too long/);
   });
 
   it('should reject templates with unknown placeholders', () => {
-    expect(() => getTemplate(MediaType.TV, '{title} {malicious}')).toThrow(/Unknown template placeholder/);
+    expect(() => getTemplate('{title} {malicious}')).toThrow(/Unknown template placeholder/);
   });
 
   it('should allow templates with all valid placeholders', () => {
     const template = '{show_name} {title} {year} {season} {episode} {episode_title} {ext}';
-    expect(() => getTemplate(MediaType.TV, template)).not.toThrow();
+    expect(() => getTemplate(template)).not.toThrow();
   });
 
   it('should allow templates with no placeholders (literal text)', () => {
-    expect(getTemplate(MediaType.TV, 'just-a-name')).toBe('just-a-name');
+    expect(getTemplate('just-a-name')).toBe('just-a-name');
   });
 });
 
@@ -59,19 +53,6 @@ describe('renderTemplate', () => {
       '.mkv',
     );
     expect(result).toBe("Breaking Bad - S01E02 - Cat's in the Bag.mkv");
-  });
-
-  it('should render movie template correctly', () => {
-    const item: TmdbMatchedItem = {
-      id: 1,
-      name: 'Inception',
-      year: 2010,
-      mediaType: MediaType.Movie,
-      searchRank: 0,
-    };
-
-    const result = renderTemplate('{title} ({year})', item, '.mkv');
-    expect(result).toBe('Inception (2010).mkv');
   });
 
   it('should handle missing episode title gracefully', () => {

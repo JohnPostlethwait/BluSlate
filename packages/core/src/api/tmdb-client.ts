@@ -4,8 +4,6 @@ import { logger } from '../utils/logger.js';
 import { AuthenticationError } from '../errors.js';
 import type {
   TmdbSearchTvResponse,
-  TmdbSearchMovieResponse,
-  TmdbMovieDetails,
   TmdbSeasonDetails,
   TmdbTvDetails,
 } from '../types/tmdb.js';
@@ -106,12 +104,6 @@ export class TmdbClient {
     return this.request<TmdbSearchTvResponse>('/search/tv', params);
   }
 
-  async searchMovie(query: string, year?: number): Promise<TmdbSearchMovieResponse> {
-    const params: Record<string, string> = { query };
-    if (year) params['year'] = String(year);
-    return this.request<TmdbSearchMovieResponse>('/search/movie', params);
-  }
-
   async getTvDetails(tvId: number): Promise<TmdbTvDetails> {
     return this.request<TmdbTvDetails>(`/tv/${tvId}`);
   }
@@ -120,7 +112,4 @@ export class TmdbClient {
     return this.request<TmdbSeasonDetails>(`/tv/${tvId}/season/${seasonNumber}`);
   }
 
-  async getMovieDetails(movieId: number): Promise<TmdbMovieDetails> {
-    return this.request<TmdbMovieDetails>(`/movie/${movieId}`);
-  }
 }

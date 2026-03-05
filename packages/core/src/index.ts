@@ -72,9 +72,6 @@ export type {
 export type {
   TmdbSearchTvResponse,
   TmdbTvResult,
-  TmdbSearchMovieResponse,
-  TmdbMovieResult,
-  TmdbMovieDetails,
   TmdbSeasonDetails,
   TmdbEpisode,
   TmdbTvDetails,

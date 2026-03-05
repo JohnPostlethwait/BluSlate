@@ -1,10 +1,10 @@
 # MediaFetch
 
-Cross-platform tool to rename TV show and movie files using [TMDb](https://www.themoviedb.org/) metadata. Available as both a CLI and an Electron desktop app.
+Cross-platform tool to rename TV show files using [TMDb](https://www.themoviedb.org/) metadata. Available as both a CLI and an Electron desktop app.
 
 ## Features
 
-- **TMDb matching** — Search and match files against The Movie Database for accurate episode/movie metadata
+- **TMDb matching** — Search and match files against The Movie Database for accurate episode metadata
 - **Batch disc rip support** — Handles generic MakeMKV filenames (`title_t00.mkv`) by matching runtimes against TMDb episode data
 - **DVDCompare integration** — Augments matching with sub-second disc runtime data from DVDCompare.com
 - **ffprobe runtime detection** — Probes file durations for runtime-based matching (gracefully degrades if unavailable)
@@ -57,7 +57,6 @@ mediafetch <directory> [options]
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-n, --dry-run` | Preview changes without renaming | `false` |
-| `-t, --type <type>` | Force media type: `tv`, `movie`, or `auto` | `auto` |
 | `-k, --api-key <key>` | TMDb API Read Access Token | — |
 | `--template <pattern>` | Custom naming template | — |
 | `-r, --recursive` | Scan subdirectories | `false` |
@@ -73,7 +72,7 @@ mediafetch <directory> [options]
 mediafetch /path/to/tv/shows
 
 # Dry-run with recursive scan
-mediafetch -r -n /media/movies
+mediafetch -r -n /media/tv/show
 
 # Provide API key inline
 TMDB_API_KEY=your_token mediafetch /media/tv
@@ -104,7 +103,7 @@ Launch the desktop app from `packages/gui/release/` or your system's Application
 
 | Placeholder | Description |
 |-------------|-------------|
-| `{show_name}` | Show or movie title |
+| `{show_name}` | Show title |
 | `{title}` | Alias for `{show_name}` |
 | `{year}` | Release year |
 | `{season}` | Season number (zero-padded) |
@@ -112,9 +111,7 @@ Launch the desktop app from `packages/gui/release/` or your system's Application
 | `{episode_title}` | Episode name |
 | `{ext}` | Original file extension |
 
-**Defaults:**
-- TV: `{show_name} - S{season}E{episode} - {episode_title}`
-- Movie: `{title} ({year})`
+**Default:** `{show_name} - S{season}E{episode} - {episode_title}`
 
 ## Project Structure
 

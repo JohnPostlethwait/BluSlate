@@ -17,35 +17,6 @@ export interface TmdbTvResult {
   origin_country: string[];
 }
 
-export interface TmdbSearchMovieResponse {
-  page: number;
-  results: TmdbMovieResult[];
-  total_pages: number;
-  total_results: number;
-}
-
-export interface TmdbMovieResult {
-  id: number;
-  title: string;
-  original_title: string;
-  overview: string;
-  release_date: string;
-  popularity: number;
-  vote_average: number;
-  poster_path: string | null;
-  runtime?: number;
-}
-
-export interface TmdbMovieDetails {
-  id: number;
-  title: string;
-  original_title: string;
-  release_date: string;
-  runtime: number;
-  overview: string;
-  popularity: number;
-  genres: Array<{ id: number; name: string }>;
-}
 
 export interface TmdbSeasonDetails {
   id: number;

@@ -158,7 +158,6 @@ describe('buildConfig', () => {
       directory: '/media',
       apiKey: 'my-key',
       dryRun: true,
-      type: 'tv',
       template: '{show_name} - {episode}',
       recursive: true,
       verbose: true,
@@ -170,7 +169,6 @@ describe('buildConfig', () => {
     expect(config.apiKey).toBe('my-key');
     expect(config.directory).toBe('/media');
     expect(config.dryRun).toBe(true);
-    expect(config.mediaType).toBe('tv');
     expect(config.template).toBe('{show_name} - {episode}');
     expect(config.recursive).toBe(true);
     expect(config.verbose).toBe(true);
@@ -186,7 +184,6 @@ describe('buildConfig', () => {
     });
 
     expect(config.dryRun).toBe(false);
-    expect(config.mediaType).toBe('auto');
     expect(config.template).toBeUndefined();
     expect(config.recursive).toBe(false);
     expect(config.verbose).toBe(false);

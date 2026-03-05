@@ -1,4 +1,4 @@
-import { filenameParse, type ParsedShow, type ParsedMovie } from '@ctrl/video-filename-parser';
+import { filenameParse, type ParsedShow } from '@ctrl/video-filename-parser';
 import { MediaType } from '../types/media.js';
 import type { ParsedFilename } from '../types/media.js';
 import { logger } from '../utils/logger.js';
@@ -14,10 +14,6 @@ const PATTERNS = {
   compressed: /^(.+?)[\s._-]+(\d)(\d{2})[\s._-]/,
   // Air date format: "show.name.2024.01.15.ext"
   airDate: /^(.+?)[\s._-]+(\d{4})\.(\d{2})\.(\d{2})/,
-  // Movie with year in parens: "Movie Title (2024).ext"
-  movieYearParens: /^(.+?)\s*\((\d{4})\)/,
-  // Movie with year in dots: "Movie.Title.2024.ext"
-  movieYearDots: /^(.+?)[\s._-]+(\d{4})[\s._-]/,
 };
 
 function stripExtension(filename: string): string {
@@ -57,21 +53,6 @@ function parseWithLibrary(filename: string): ParsedFilename | null {
       }
     }
 
-    // Check if it's a movie (only when not detected as TV)
-    if (!isTv && result.year) {
-      const movie = result as ParsedMovie;
-      const yearNum = movie.year ? parseInt(movie.year, 10) : undefined;
-      return {
-        mediaType: MediaType.Movie,
-        title: movie.title,
-        year: yearNum,
-        quality: movie.resolution ?? undefined,
-        codec: movie.videoCodec ?? undefined,
-        source: movie.sources?.[0] ?? undefined,
-        releaseGroup: movie.group ?? undefined,
-      };
-    }
-
     // Library returned something but couldn't fully categorize
     if (result.title) {
       return {
@@ -103,7 +84,7 @@ function parseWithFallback(filename: string): ParsedFilename | null {
     };
   }
 
-  // Try air date format (must be checked before movie year pattern)
+  // Try air date format
   match = nameWithoutExt.match(PATTERNS.airDate);
   if (match) {
     return {
@@ -124,29 +105,6 @@ function parseWithFallback(filename: string): ParsedFilename | null {
     };
   }
 
-  // Try movie with year in parens
-  match = nameWithoutExt.match(PATTERNS.movieYearParens);
-  if (match) {
-    return {
-      mediaType: MediaType.Movie,
-      title: cleanTitle(match[1]),
-      year: parseInt(match[2], 10),
-    };
-  }
-
-  // Try movie with year in dots
-  match = nameWithoutExt.match(PATTERNS.movieYearDots);
-  if (match) {
-    const year = parseInt(match[2], 10);
-    if (year >= 1900 && year <= new Date().getFullYear() + 1) {
-      return {
-        mediaType: MediaType.Movie,
-        title: cleanTitle(match[1]),
-        year,
-      };
-    }
-  }
-
   return null;
 }
 
@@ -154,7 +112,7 @@ export function parseFilename(filename: string): ParsedFilename {
   logger.parse(`Parsing: ${filename}`);
 
   // Check for air date format first (before library), since the library
-  // would misidentify the year portion as a movie year
+  // would misidentify the year portion
   const nameWithoutExt = stripExtension(filename);
   const airDateMatch = nameWithoutExt.match(PATTERNS.airDate);
   if (airDateMatch) {

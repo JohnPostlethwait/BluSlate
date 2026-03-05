@@ -7,7 +7,6 @@
 
 import { resolve, isAbsolute } from 'node:path';
 
-export const VALID_MEDIA_TYPES = new Set(['auto', 'tv', 'movie']);
 export const VALID_LANGUAGE_RE = /^[a-z]{2}(-[A-Z]{2})?$/;
 export const MAX_API_KEY_LENGTH = 1024;
 export const MAX_TEMPLATE_LENGTH = 500;
@@ -21,7 +20,6 @@ export interface ValidatedPipelineOptions {
   autoAccept: boolean;
   minConfidence: number;
   template?: string;
-  mediaType?: string;
 }
 
 /**
@@ -77,12 +75,7 @@ export function validatePipelineOptions(options: unknown): ValidatedPipelineOpti
     template = opts.template;
   }
 
-  // Media type: must be a known value
-  const mediaType = typeof opts.mediaType === 'string' && VALID_MEDIA_TYPES.has(opts.mediaType)
-    ? opts.mediaType
-    : 'auto';
-
-  return { directory: resolvedDir, apiKey: opts.apiKey, dryRun, recursive, language, autoAccept, minConfidence, template, mediaType };
+  return { directory: resolvedDir, apiKey: opts.apiKey, dryRun, recursive, language, autoAccept, minConfidence, template };
 }
 
 /** Sanitize error messages before sending to renderer — strip file paths and sensitive data */

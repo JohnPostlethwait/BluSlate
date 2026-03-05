@@ -77,12 +77,6 @@ export function computeConfidence(
     ) {
       score += 15;
     }
-  } else if (parsed.mediaType === MediaType.Movie) {
-    // Redistribute for movies
-    score += titleSim * 7.5;
-    if (parsed.year && parsed.year === tmdbResult.year) {
-      score += 7.5;
-    }
   }
 
   // 4. Runtime match (0-20 points)

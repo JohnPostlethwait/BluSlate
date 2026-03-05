@@ -3,10 +3,8 @@ import { parseFilename } from '../../packages/core/src/core/parser.js';
 import { MediaType } from '../../packages/core/src/types/media.js';
 import {
   tvShowCases,
-  movieCases,
   fallbackCases,
   discRipTvCases,
-  discRipMovieCases,
   genericDiscCases,
 } from '../fixtures/filenames.js';
 
@@ -29,21 +27,6 @@ describe('parseFilename', () => {
     }
   });
 
-  describe('Movie parsing', () => {
-    for (const testCase of movieCases) {
-      it(`should parse: ${testCase.input}`, () => {
-        const result = parseFilename(testCase.input);
-        expect(result.mediaType).toBe(testCase.expected.mediaType);
-        if (testCase.expected.title) {
-          expect(result.title.toLowerCase()).toContain(testCase.expected.title.toLowerCase());
-        }
-        if (testCase.expected.year) {
-          expect(result.year).toBe(testCase.expected.year);
-        }
-      });
-    }
-  });
-
   describe('Fallback parsing', () => {
     for (const testCase of fallbackCases) {
       it(`should parse: ${testCase.input}`, () => {
@@ -57,9 +40,6 @@ describe('parseFilename', () => {
         }
         if (testCase.expected.episodeNumbers) {
           expect(result.episodeNumbers).toEqual(testCase.expected.episodeNumbers);
-        }
-        if (testCase.expected.year) {
-          expect(result.year).toBe(testCase.expected.year);
         }
         if (testCase.expected.airDate) {
           expect(result.airDate).toBe(testCase.expected.airDate);
@@ -81,21 +61,6 @@ describe('parseFilename', () => {
         }
         if (testCase.expected.episodeNumbers) {
           expect(result.episodeNumbers).toEqual(testCase.expected.episodeNumbers);
-        }
-      });
-    }
-  });
-
-  describe('Disc rip Movie parsing', () => {
-    for (const testCase of discRipMovieCases) {
-      it(`should parse: ${testCase.input}`, () => {
-        const result = parseFilename(testCase.input);
-        expect(result.mediaType).toBe(testCase.expected.mediaType);
-        if (testCase.expected.title) {
-          expect(result.title.toLowerCase()).toContain(testCase.expected.title.toLowerCase());
-        }
-        if (testCase.expected.year) {
-          expect(result.year).toBe(testCase.expected.year);
         }
       });
     }
@@ -154,10 +119,9 @@ describe('parseFilename', () => {
       expect(result.title).toBeTruthy();
     });
 
-    // Movie with no year — should be Unknown (no way to differentiate)
-    it('should handle movie name without year as Unknown', () => {
-      const result = parseFilename('Some Random Movie.mkv');
-      // Without year or S##E##, the parser has no signal
+    // Filename without year or S##E## — should be Unknown
+    it('should handle unrecognized filename as Unknown', () => {
+      const result = parseFilename('Some Random Title.mkv');
       expect(result.title).toBeTruthy();
     });
 

@@ -1,7 +1,7 @@
 {
   "name": "@mediafetch/gui",
   "version": "0.1.0",
-  "description": "Desktop GUI for MediaFetch — rename TV show and movie files using TMDb metadata",
+  "description": "Desktop GUI for MediaFetch — rename TV show files using TMDb metadata",
   "main": "./out/main/index.js",
   "type": "module",
   "scripts": {

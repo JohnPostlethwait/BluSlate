@@ -232,7 +232,7 @@
 <main>
   <header>
     <h1>MediaFetch</h1>
-    <p class="subtitle">Rename TV shows and movies using TMDb metadata</p>
+    <p class="subtitle">Rename TV shows using TMDb metadata</p>
   </header>
 
   {#if errorMessage}

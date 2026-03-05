@@ -80,31 +80,6 @@ describe('TmdbClient', () => {
     });
   });
 
-  describe('searchMovie', () => {
-    it('should search for movies', async () => {
-      const responseData = { page: 1, results: [{ id: 1, title: 'Inception' }], total_pages: 1, total_results: 1 };
-      mockFetch.mockResolvedValue(makeJsonResponse(responseData));
-
-      const client = new TmdbClient('test-key');
-      const result = await client.searchMovie('Inception');
-
-      expect(result).toEqual(responseData);
-      const url = new URL(mockFetch.mock.calls[0][0]);
-      expect(url.pathname).toBe('/3/search/movie');
-      expect(url.searchParams.get('query')).toBe('Inception');
-    });
-
-    it('should include year filter when provided', async () => {
-      mockFetch.mockResolvedValue(makeJsonResponse({ page: 1, results: [], total_pages: 0, total_results: 0 }));
-
-      const client = new TmdbClient('test-key');
-      await client.searchMovie('Inception', 2010);
-
-      const url = new URL(mockFetch.mock.calls[0][0]);
-      expect(url.searchParams.get('year')).toBe('2010');
-    });
-  });
-
   describe('getTvDetails', () => {
     it('should fetch TV details by ID', async () => {
       const details = { id: 1396, name: 'Breaking Bad', episode_run_time: [45] };
@@ -130,20 +105,6 @@ describe('TmdbClient', () => {
       expect(result).toEqual(seasonData);
       const url = new URL(mockFetch.mock.calls[0][0]);
       expect(url.pathname).toBe('/3/tv/1396/season/1');
-    });
-  });
-
-  describe('getMovieDetails', () => {
-    it('should fetch movie details by ID', async () => {
-      const movieData = { id: 27205, title: 'Inception', runtime: 148 };
-      mockFetch.mockResolvedValue(makeJsonResponse(movieData));
-
-      const client = new TmdbClient('test-key');
-      const result = await client.getMovieDetails(27205);
-
-      expect(result).toEqual(movieData);
-      const url = new URL(mockFetch.mock.calls[0][0]);
-      expect(url.pathname).toBe('/3/movie/27205');
     });
   });
 

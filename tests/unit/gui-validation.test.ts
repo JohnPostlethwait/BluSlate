@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   validatePipelineOptions,
   sanitizeErrorMessage,
-  VALID_MEDIA_TYPES,
   VALID_LANGUAGE_RE,
   MAX_API_KEY_LENGTH,
   MAX_TEMPLATE_LENGTH,
@@ -22,7 +21,6 @@ describe('validatePipelineOptions', () => {
     autoAccept: false,
     minConfidence: 85,
     template: '{show_name} - {episode}',
-    mediaType: 'tv',
   };
 
   // --- Happy path ---
@@ -37,7 +35,6 @@ describe('validatePipelineOptions', () => {
     expect(result.autoAccept).toBe(false);
     expect(result.minConfidence).toBe(85);
     expect(result.template).toBe('{show_name} - {episode}');
-    expect(result.mediaType).toBe('tv');
   });
 
   it('should accept minimal valid options with defaults', () => {
@@ -53,7 +50,6 @@ describe('validatePipelineOptions', () => {
     expect(result.language).toBe('en-US');
     expect(result.minConfidence).toBe(85);
     expect(result.template).toBeUndefined();
-    expect(result.mediaType).toBe('auto');
   });
 
   // --- Null / non-object ---
@@ -193,27 +189,6 @@ describe('validatePipelineOptions', () => {
     expect(result.template).toBeUndefined();
   });
 
-  // --- Media type validation ---
-
-  it('should accept valid media types', () => {
-    for (const type of VALID_MEDIA_TYPES) {
-      expect(
-        validatePipelineOptions({ ...validOptions, mediaType: type }).mediaType,
-      ).toBe(type);
-    }
-  });
-
-  it('should default to auto for invalid media types', () => {
-    expect(
-      validatePipelineOptions({ ...validOptions, mediaType: 'anime' }).mediaType,
-    ).toBe('auto');
-    expect(
-      validatePipelineOptions({ ...validOptions, mediaType: '' }).mediaType,
-    ).toBe('auto');
-    expect(
-      validatePipelineOptions({ ...validOptions, mediaType: 42 }).mediaType,
-    ).toBe('auto');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -261,13 +236,6 @@ describe('sanitizeErrorMessage', () => {
 // ---------------------------------------------------------------------------
 
 describe('validation constants', () => {
-  it('should have the expected valid media types', () => {
-    expect(VALID_MEDIA_TYPES).toContain('auto');
-    expect(VALID_MEDIA_TYPES).toContain('tv');
-    expect(VALID_MEDIA_TYPES).toContain('movie');
-    expect(VALID_MEDIA_TYPES.size).toBe(3);
-  });
-
   it('should validate language regex correctly', () => {
     expect(VALID_LANGUAGE_RE.test('en')).toBe(true);
     expect(VALID_LANGUAGE_RE.test('en-US')).toBe(true);

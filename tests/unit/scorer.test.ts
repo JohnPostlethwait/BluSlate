@@ -79,24 +79,6 @@ describe('computeConfidence', () => {
     expect(withRuntime).toBeGreaterThan(withoutRuntime);
   });
 
-  it('should handle movie scoring', () => {
-    const parsed: ParsedFilename = {
-      mediaType: MediaType.Movie,
-      title: 'Inception',
-      year: 2010,
-    };
-    const tmdb: TmdbMatchedItem = {
-      id: 27205,
-      name: 'Inception',
-      year: 2010,
-      runtime: 148,
-      mediaType: MediaType.Movie,
-      searchRank: 0,
-    };
-    const confidence = computeConfidence(parsed, undefined, tmdb, 148);
-    expect(confidence).toBeGreaterThanOrEqual(80);
-  });
-
   it('should reduce confidence for wrong season/episode', () => {
     const tmdbWrongEp: TmdbMatchedItem = {
       ...baseTmdbTV,

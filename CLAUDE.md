@@ -130,4 +130,4 @@ If no Electron processes appear, the app is closed. If processes appear, the app
 
 ### Template System
 
-`{show_name}`, `{title}`, `{year}`, `{season}`, `{episode}`, `{episode_title}`, `{ext}` — defined in `core/config/templates.ts`. Defaults: TV = `{show_name} - S{season}E{episode} - {episode_title}`, Movie = `{title} ({year})`.
+`{show_name}`, `{title}`, `{year}`, `{season}`, `{episode}`, `{episode_title}`, `{ext}` — defined in `core/config/templates.ts`. Default: `{show_name} - S{season}E{episode} - {episode_title}`.

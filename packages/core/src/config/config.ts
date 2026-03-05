@@ -49,7 +49,6 @@ export async function buildConfig(options: {
   directory: string;
   apiKey?: string;
   dryRun?: boolean;
-  type?: string;
   template?: string;
   recursive?: boolean;
   verbose?: boolean;
@@ -73,7 +72,6 @@ export async function buildConfig(options: {
     apiKey,
     directory: options.directory,
     dryRun: options.dryRun ?? false,
-    mediaType: (options.type as AppConfig['mediaType']) ?? 'auto',
     template: options.template,
     recursive: options.recursive ?? false,
     verbose: options.verbose ?? false,

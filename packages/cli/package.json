@@ -1,7 +1,7 @@
 {
   "name": "@mediafetch/cli",
   "version": "0.1.0",
-  "description": "CLI frontend for MediaFetch — rename TV show and movie files using TMDb metadata",
+  "description": "CLI frontend for MediaFetch — rename TV show files using TMDb metadata",
   "type": "module",
   "bin": {
     "mediafetch": "./dist/index.js"

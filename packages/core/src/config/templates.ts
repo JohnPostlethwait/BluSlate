@@ -1,5 +1,4 @@
-import { DEFAULT_TEMPLATES } from '../types/config.js';
-import { MediaType } from '../types/media.js';
+import { DEFAULT_TEMPLATE } from '../types/config.js';
 import type { TmdbMatchedItem } from '../types/media.js';
 import { sanitizeFilename } from '../utils/sanitize.js';
 
@@ -9,7 +8,7 @@ const VALID_PLACEHOLDERS = new Set([
   '{episode}', '{episode_title}', '{ext}',
 ]);
 
-export function getTemplate(mediaType: MediaType, customTemplate?: string): string {
+export function getTemplate(customTemplate?: string): string {
   if (customTemplate) {
     if (customTemplate.length > MAX_TEMPLATE_LENGTH) {
       throw new Error(`Template too long (max ${MAX_TEMPLATE_LENGTH} characters)`);
@@ -23,7 +22,7 @@ export function getTemplate(mediaType: MediaType, customTemplate?: string): stri
     }
     return customTemplate;
   }
-  return mediaType === MediaType.TV ? DEFAULT_TEMPLATES.tv : DEFAULT_TEMPLATES.movie;
+  return DEFAULT_TEMPLATE;
 }
 
 export function renderTemplate(template: string, item: TmdbMatchedItem, extension: string): string {

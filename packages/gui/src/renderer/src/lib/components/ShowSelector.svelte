@@ -42,7 +42,7 @@
     Select the correct show for: <strong>{showName}</strong>
   </p>
   <p class="description">
-    TMDb (The Movie Database) is a community-built database of TV and movie metadata.
+    TMDb (The Movie Database) is a community-built database of TV show metadata.
     Select the correct match below to identify your files for renaming.
   </p>
 

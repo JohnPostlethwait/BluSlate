@@ -79,7 +79,7 @@ export function applyEpisodeEdit(
   tmdb.episodeNumberEnd = episodeEnd && episodeEnd !== newEpisodeNumber ? episodeEnd : undefined;
   tmdb.episodeTitle = episodeTitle;
 
-  const tmdbTemplate = getTemplate(tmdb.mediaType, template);
+  const tmdbTemplate = getTemplate(template);
   match.newFilename = renderTemplate(tmdbTemplate, tmdb, match.mediaFile.extension);
   match.status = 'ambiguous';
   match.confidence = Math.min(match.confidence, 70);
@@ -101,7 +101,7 @@ export function applySeasonEdit(
   tmdb.seasonNumber = newSeasonNumber;
   tmdb.episodeTitle = episodeTitle;
 
-  const tmdbTemplate = getTemplate(tmdb.mediaType, template);
+  const tmdbTemplate = getTemplate(template);
   match.newFilename = renderTemplate(tmdbTemplate, tmdb, match.mediaFile.extension);
   match.status = 'ambiguous';
   match.confidence = Math.min(match.confidence, 70);

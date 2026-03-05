@@ -97,54 +97,6 @@ export const tvShowCases: FilenameTestCase[] = [
   },
 ];
 
-export const movieCases: FilenameTestCase[] = [
-  // Standard movie with year in dots
-  {
-    input: 'Inception.2010.1080p.BluRay.x264.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Inception',
-      year: 2010,
-    },
-  },
-  // Movie with year in parentheses
-  {
-    input: 'The Shawshank Redemption (1994).mp4',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'The Shawshank Redemption',
-      year: 1994,
-    },
-  },
-  // Movie with quality tags
-  {
-    input: 'Interstellar.2014.IMAX.1080p.BluRay.x265-RARBG.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Interstellar',
-      year: 2014,
-    },
-  },
-  // Movie with spaces and year
-  {
-    input: 'The Dark Knight 2008 BluRay 1080p.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'The Dark Knight',
-      year: 2008,
-    },
-  },
-  // Recent movie
-  {
-    input: 'Oppenheimer.2023.1080p.WEB-DL.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Oppenheimer',
-      year: 2023,
-    },
-  },
-];
-
 export const fallbackCases: FilenameTestCase[] = [
   // 1x02 format
   {
@@ -183,15 +135,6 @@ export const fallbackCases: FilenameTestCase[] = [
       mediaType: MediaType.TV,
       title: 'The Daily Show',
       airDate: '2024-01-15',
-    },
-  },
-  // Movie with year in parens (fallback)
-  {
-    input: 'Pulp Fiction (1994).avi',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Pulp Fiction',
-      year: 1994,
     },
   },
 ];
@@ -253,25 +196,6 @@ export const discRipTvCases: FilenameTestCase[] = [
     },
   },
 
-  // ── Scene releases from disc rips ─────────────────────────────────────
-  // 4K/UHD BluRay remux
-  {
-    input: 'Dune.Part.Two.2024.2160p.UHD.BluRay.Remux.HEVC.DV.TrueHD.7.1.Atmos-FGT.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Dune Part Two',
-      year: 2024,
-    },
-  },
-  // Standard BluRay remux movie
-  {
-    input: 'The.Matrix.1999.1080p.BluRay.Remux.AVC.DTS-HD.MA.6.1-FGT.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'The Matrix',
-      year: 1999,
-    },
-  },
   // TV BluRay remux
   {
     input: 'Band.of.Brothers.S01E04.1080p.BluRay.Remux.AVC.DTS-HD.MA.5.1-EPSiLON.mkv',
@@ -289,60 +213,6 @@ export const discRipTvCases: FilenameTestCase[] = [
     input: 'Stranger.Things.S04.COMPLETE.1080p.WEB.mkv',
     expected: {
       mediaType: MediaType.Unknown,
-    },
-  },
-];
-
-export const discRipMovieCases: FilenameTestCase[] = [
-  // ── 4K UHD disc rips ──────────────────────────────────────────────────
-  {
-    input: 'Oppenheimer.2023.2160p.UHD.BluRay.x265.HDR.DDP5.1.Atmos-SWTYBLZ.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Oppenheimer',
-      year: 2023,
-    },
-  },
-  // Dolby Vision / HDR10+ tags
-  {
-    input: 'Spider-Man.No.Way.Home.2021.2160p.BluRay.REMUX.HEVC.DV.DTS-HD.MA.TrueHD.7.1.Atmos.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      year: 2021,
-    },
-  },
-  // Movie ripped with parenthesized year + resolution tags
-  {
-    input: 'Gladiator (2000) 1080p BluRay Remux.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Gladiator',
-      year: 2000,
-    },
-  },
-  // DVD rip with lower quality tags
-  {
-    input: 'Blade.Runner.1982.DVDRip.x264-HAGGiS.avi',
-    expected: {
-      mediaType: MediaType.Movie,
-      title: 'Blade Runner',
-      year: 1982,
-    },
-  },
-  // Movie with hyphenated name
-  {
-    input: 'Spider-Man.Homecoming.2017.1080p.BluRay.x264-SPARKS.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      year: 2017,
-    },
-  },
-  // Movie with extended/directors cut tag
-  {
-    input: 'The.Lord.of.the.Rings.The.Return.of.the.King.2003.EXTENDED.1080p.BluRay.x264.mkv',
-    expected: {
-      mediaType: MediaType.Movie,
-      year: 2003,
     },
   },
 ];

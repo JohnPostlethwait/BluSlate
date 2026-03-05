@@ -1017,7 +1017,7 @@ export async function matchSpecialsBatch(
         tmdbRuntimeMinutes: bestSpecial.runtime,
       });
 
-      const tmdbTemplate = getTemplate(MediaType.TV, template);
+      const tmdbTemplate = getTemplate(template);
       const newFilename = renderTemplate(tmdbTemplate, tmdbMatch, candidate.file.extension);
 
       matched.push({
@@ -1113,7 +1113,7 @@ function createBatchMatch(params: CreateBatchMatchParams): MatchResult {
     dvdCompareRuntimeDiffSeconds,
   });
 
-  const tmdbTemplate = getTemplate(MediaType.TV, customTemplate);
+  const tmdbTemplate = getTemplate(customTemplate);
   const newFilename = renderTemplate(tmdbTemplate, tmdbMatch, classifiedFile.file.extension);
 
   return {

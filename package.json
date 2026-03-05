@@ -2,7 +2,7 @@
   "name": "mediafetch",
   "version": "0.1.0",
   "private": true,
-  "description": "Cross-platform tool to rename TV show and movie files using TMDb metadata",
+  "description": "Cross-platform tool to rename TV show files using TMDb metadata",
   "type": "module",
   "scripts": {
     "build": "pnpm -r run build",
@@ -22,7 +22,7 @@
     "rename",
     "tmdb",
     "tv",
-    "movies",
+    "shows",
     "cli"
   ],
   "author": "",
