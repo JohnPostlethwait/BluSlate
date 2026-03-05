@@ -49,6 +49,7 @@ pkill -f BluSlate 2>/dev/null; sleep 1; rm -rf /Applications/BluSlate.app && cp 
 # Git commands (cwd resets, so use -C)
 git -C /Users/johnpostlethwait/Documents/workspace/BluSlate status
 
+# Version bumps — ALL package.json files must be updated together (root + packages/core, cli, gui, web)
 # Creating release tags — MUST use annotated tags (lightweight tags do NOT trigger GitHub Actions push:tags)
 git tag -a v0.x.x <commit> -m "Release v0.x.x"
 git push origin v0.x.x
