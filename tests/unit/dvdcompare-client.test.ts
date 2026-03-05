@@ -623,6 +623,117 @@ describe('parseComparisonPage — special character normalization', () => {
     expect(discs[0].episodes[2].title).toBe('Elementary, Dear Data');
   });
 
+  it('should handle episode section header with count prefix like "7 Episodes:"', () => {
+    // Real format from Arrested Development S1 (fid=6185)
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        <br />Introduction by Ron Howard (0:22)
+        <br />7 Episodes:
+        <br />- "Extended Pilot" (28:33)
+        <br />- "Pilot" (21:46)
+        <br />- "Top Banana" (22:05)
+        <br />- "Bringing Up Buster" (22:11)
+        <br />- "Key Decisions" (21:46)
+        <br />- "Visiting Ours" (21:44)
+        <br />- "Charity Drive" (21:45)
+        <br />Supplements:
+        <br />*Audio Commentary on "Extended Pilot"
+        <b>DISC TWO</b>
+        <br />8 Episodes:
+        <br />- "My Mother, The Car" (21:43)
+        <br />- "In God We Trust" (21:43)
+        <br />- "Storming The Castle" (22:04)
+        <br />Supplements:
+        <br />*Audio Commentary
+      </div>
+    `;
+
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(2);
+    expect(discs[0].episodes).toHaveLength(7);
+    expect(discs[0].episodes[0].title).toBe('Extended Pilot');
+    expect(discs[0].episodes[6].title).toBe('Charity Drive');
+    expect(discs[1].episodes).toHaveLength(3);
+    expect(discs[1].episodes[0].title).toBe('My Mother, The Car');
+  });
+
+  it('should handle episode number with decimal/colon prefix like "6.01:"', () => {
+    // Real format from Homicide: Life on the Street (fid=16498)
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        <br />4 Episodes:
+        <br />- 6.01: "Blood Ties (Part 1)" (46:20)
+        <br />- 6.02: "Blood Ties (Part 2)" (45:30)
+        <br />- 6.03: "Blood Ties (Part 3)" (46:18)
+        <br />- 6.07: "The Subway" (46:18)
+        <br />Audio commentary
+        <b>DISC TWO</b>
+        <br />4 Episodes:
+        <br />- 6.05: "Baby It's You" (45:00)
+        <br />- 6.04: "Birthday" (45:20)
+        <br />- 6.06: "Saigon Rose" (45:32)
+        <br />- 6.08: "All is Bright" (45:32)
+      </div>
+    `;
+
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(2);
+    expect(discs[0].episodes).toHaveLength(4);
+    expect(discs[0].episodes[0].title).toBe('Blood Ties (Part 1)');
+    expect(discs[0].episodes[0].runtimeSeconds).toBe(46 * 60 + 20);
+    expect(discs[0].episodes[3].title).toBe('The Subway');
+    expect(discs[1].episodes).toHaveLength(4);
+    expect(discs[1].episodes[0].title).toBe("Baby It's You");
+  });
+
+  it('should handle title with parenthetical annotation before runtime', () => {
+    // Real format from The Sopranos S1 (fid=415)
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        <br />Episodes:
+        <br />- "The Sopranos" (Pilot) (59:56)
+        <br />- "46 Long" (49:40)
+        <br />- "Denial, Anger, Acceptance" (44:44)
+        <br />Audio commentary
+      </div>
+    `;
+
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(1);
+    expect(discs[0].episodes).toHaveLength(3);
+    expect(discs[0].episodes[0].title).toBe('The Sopranos');
+    expect(discs[0].episodes[0].runtimeSeconds).toBe(59 * 60 + 56);
+    expect(discs[0].episodes[1].title).toBe('46 Long');
+  });
+
+  it('should handle missing closing quote on episode title', () => {
+    // Real format from Band of Brothers (fid=2171) — data entry error
+    const html = `
+      <div class="description">
+        <b>DISC ONE</b>
+        <br />2 Episodes:
+        <br />- "Currahee" (73:08)
+        <br />- "Day of Days (51:57)
+        <br />Supplements:
+        <b>DISC TWO</b>
+        <br />2 Episodes:
+        <br />- "Carentan" (65:16)
+        <br />- "Replacements" (59:38)
+      </div>
+    `;
+
+    const discs = parseComparisonPage(html);
+    expect(discs).toHaveLength(2);
+    expect(discs[0].episodes).toHaveLength(2);
+    expect(discs[0].episodes[0].title).toBe('Currahee');
+    expect(discs[0].episodes[1].title).toBe('Day of Days');
+    expect(discs[0].episodes[1].runtimeSeconds).toBe(51 * 60 + 57);
+    expect(discs[1].episodes).toHaveLength(2);
+  });
+
   it('should handle en dashes and em dashes in episode titles', () => {
     const html = `
       <div class="description">

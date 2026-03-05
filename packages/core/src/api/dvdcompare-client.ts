@@ -261,7 +261,9 @@ export function parseComparisonPage(html: string): DvdCompareDisc[] {
       const cleaned = line.replace(/<[^>]+>/g, '').replace(/\r|\n/g, '').trim();
 
       // Detect start of episodes section
-      if (/^Episodes?\b/i.test(cleaned) && !/Promo/i.test(cleaned)) {
+      // Handles: "Episodes", "Episodes:", "Episodes (with Play All)",
+      // "7 Episodes:", "2 Episodes:", "4 Episodes:" (count-prefixed)
+      if (/^(?:\d+\s+)?Episodes?\b/i.test(cleaned) && !/Promo/i.test(cleaned)) {
         inEpisodesSection = true;
         continue;
       }
@@ -279,15 +281,24 @@ export function parseComparisonPage(html: string): DvdCompareDisc[] {
 
       if (!inEpisodesSection) continue;
 
-      // Parse episode entry:
-      //   - "Episode Title" (MM:SS)             — no episode number
-      //   - 1 "Episode Title" (MM:SS)           — with episode number
-      //   - "Episode Title" (H:MM:SS)           — long-form runtime
-      // DVDCompare uses both numbered and unnumbered formats depending on the release.
-      const epMatch = cleaned.match(/^-\s*(?:\d+\s+)?"([^"]+)"\s*\((\d{1,3}:\d{2}(?::\d{2})?)\)/);
-      if (epMatch) {
-        const title = epMatch[1];
-        const runtimeFormatted = epMatch[2];
+      // Parse episode entry. DVDCompare uses several formats:
+      //   - "Episode Title" (MM:SS)                          — basic
+      //   - 1 "Episode Title" (MM:SS)                        — numbered
+      //   - 6.01: "Episode Title" (MM:SS)                    — decimal numbered
+      //   - "Episode Title" (H:MM:SS)                        — long-form runtime
+      //   - "Episode Title" (annotation) (MM:SS)             — parenthetical before runtime
+      //   - "Episode Title (MM:SS)                           — missing closing quote
+      const epMatch = cleaned.match(
+        /^-\s*(?:\d+(?:\.\d+)?:?\s+)?"([^"]+)"\s*(?:\([^)]*\)\s*)*\((\d{1,3}:\d{2}(?::\d{2})?)\)/,
+      );
+      // Fallback: missing closing quote — - "Title (MM:SS)
+      const unclosedMatch =
+        !epMatch &&
+        cleaned.match(/^-\s*(?:\d+(?:\.\d+)?:?\s+)?"([^"(]+)\s*\((\d{1,3}:\d{2}(?::\d{2})?)\)/);
+      const match = epMatch || unclosedMatch;
+      if (match) {
+        const title = match[1].trim();
+        const runtimeFormatted = match[2];
 
         // Parse MM:SS or H:MM:SS to seconds
         const parts = runtimeFormatted.split(':').map(Number);
