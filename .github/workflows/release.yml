@@ -57,7 +57,7 @@ jobs:
           - os: macos-latest
             display_name: macOS arm64
             electron_args: --mac --arm64
-          - os: macos-13
+          - os: macos-15-intel
             display_name: macOS x64
             electron_args: --mac --x64
           - os: windows-latest
