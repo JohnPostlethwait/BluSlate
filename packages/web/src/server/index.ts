@@ -54,8 +54,25 @@ function safeEqual(a: string, b: string): boolean {
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
 
-  // Security headers (CSP disabled — Svelte SPA may use inline styles/scripts from Vite build)
-  await app.register(fastifyHelmet, { contentSecurityPolicy: false });
+  // Security headers
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'https://image.tmdb.org', 'data:'],
+        connectSrc: ["'self'", 'wss:', 'ws:', 'https://api.themoviedb.org', 'https://www.dvdcompare.net'],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    // COOP is only meaningful over HTTPS — suppress browser warning on HTTP deployments
+    crossOriginOpenerPolicy: false,
+    // Socket.IO responses bypass helmet, causing Origin-Agent-Cluster inconsistency warnings
+    originAgentCluster: false,
+  });
 
   // CORS: deny cross-origin requests (all UI is served from the same origin)
   await app.register(fastifyCors, { origin: false });

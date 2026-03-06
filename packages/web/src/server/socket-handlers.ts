@@ -6,7 +6,7 @@
 
 import type { Socket } from 'socket.io';
 import { stat } from 'node:fs/promises';
-import { runPipeline, buildConfig, PipelineCancelledError, validatePipelineOptions, sanitizeErrorMessage } from '@bluslate/core';
+import { runPipeline, buildConfig, validatePipelineOptions, sanitizeErrorMessage } from '@bluslate/core';
 import { createWebAdapter, type CancellableWebAdapter } from './web-adapter.js';
 import { loadSettings, saveSettings, addRecentDirectory } from './settings.js';
 
@@ -14,6 +14,14 @@ let pipelineRunning = false;
 let currentAdapter: CancellableWebAdapter | null = null;
 
 export function registerSocketHandlers(socket: Socket): void {
+  socket.on('disconnect', () => {
+    if (currentAdapter) {
+      currentAdapter.cancel();
+      currentAdapter = null;
+      pipelineRunning = false;
+    }
+  });
+
   socket.on('pipeline:cancel', () => {
     if (currentAdapter) {
       currentAdapter.cancel();
