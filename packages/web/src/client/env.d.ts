@@ -14,7 +14,6 @@ interface Window {
       autoAccept: boolean;
       minConfidence: number;
       template?: string;
-      mediaType?: string;
     }) => void;
     onProgress: (callback: (event: string, data: { message?: string }) => void) => () => void;
     onResults: (callback: (data: { matches: MatchResultData[]; scanDirectory: string }) => void) => () => void;
@@ -37,60 +36,7 @@ interface Window {
   };
 }
 
-interface ConfidenceBreakdownItem {
-  label: string;
-  points: number;
-  maxPoints?: number;
-}
-
-interface MatchResultData {
-  mediaFile: { filePath: string; fileName: string; extension: string; sizeBytes: number };
-  parsed: { mediaType: string; title: string; season?: number; episodeNumbers?: number[] };
-  probeData?: { durationSeconds?: number; durationMinutes?: number };
-  tmdbMatch?: {
-    id: number;
-    name: string;
-    year?: number;
-    runtime?: number;
-    mediaType: string;
-    seasonNumber?: number;
-    episodeNumber?: number;
-    episodeNumberEnd?: number;
-    episodeTitle?: string;
-    seasonEpisodeCount?: number;
-    seasonEpisodes?: Array<{
-      episodeNumber: number;
-      episodeName: string;
-      runtime: number | null;
-    }>;
-  };
-  confidence: number;
-  confidenceBreakdown?: ConfidenceBreakdownItem[];
-  newFilename: string;
-  status: 'matched' | 'ambiguous' | 'unmatched';
-  warnings?: string[];
-  matchSource?: 'dvdcompare' | 'tmdb';
-  dvdCompareUsed?: boolean;
-  dvdCompareRuntimeSeconds?: number;
-  dvdCompareTitle?: string;
-}
-
-interface ShowCandidate {
-  id: number;
-  name: string;
-  original_name: string;
-  overview: string;
-  first_air_date: string;
-  popularity: number;
-  vote_average: number;
-  poster_path: string | null;
-  origin_country: string[];
-}
-
-interface DvdCompareCandidate {
-  fid: number;
-  title: string;
-  years: string;
-  isBluray: boolean;
-  episodeCount?: number;
-}
+type ConfidenceBreakdownItem = import('@bluslate/ui').ConfidenceBreakdownItem;
+type MatchResultData = import('@bluslate/ui').MatchResultData;
+type ShowCandidate = import('@bluslate/ui').ShowCandidate;
+type DvdCompareCandidate = import('@bluslate/ui').DvdCompareCandidate;

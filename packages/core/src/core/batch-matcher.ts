@@ -17,6 +17,9 @@ import {
   TRACK_REVERSAL_THRESHOLD,
   TRACK_REVERSAL_MIN_FORWARD_COST,
   TRACK_REVERSAL_UNIFORM_CV_THRESHOLD,
+  MULTI_EPISODE_CANDIDATE_PENALTY,
+  TRACK_REVERSAL_MIN_FILES_PER_DISC,
+  TRACK_REVERSAL_MIN_DVD_EPISODES,
 } from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
 import { MediaType } from '../types/media.js';
@@ -548,7 +551,7 @@ export async function matchSeasonBatch(
 
           if (combinedCostMin <= MULTI_EPISODE_COMBINED_TOLERANCE_MIN) {
             // Small penalty for multi-ep to prefer single-ep when close
-            const cost = combinedCostMin + posDiff * POSITIONAL_WEIGHT + 3;
+            const cost = combinedCostMin + posDiff * POSITIONAL_WEIGHT + MULTI_EPISODE_CANDIDATE_PENALTY;
             candidates.push({
               fileIdx: fi,
               epIdx: ei,
@@ -1269,7 +1272,7 @@ export function detectAndApplyTrackOrder(
   for (let i = 0; i < episodeFiles.length; i++) {
     const disc = parseDiscFromPath(episodeFiles[i].file.filePath) ?? 0;
     if (disc !== currentDisc) {
-      if (currentDisc !== undefined && i - runStart >= 2) {
+      if (currentDisc !== undefined && i - runStart >= TRACK_REVERSAL_MIN_FILES_PER_DISC) {
         discRuns.push({ disc: currentDisc, startIdx: runStart, endIdx: i - 1 });
       }
       currentDisc = disc;
@@ -1277,7 +1280,7 @@ export function detectAndApplyTrackOrder(
     }
   }
   // Final run
-  if (currentDisc !== undefined && episodeFiles.length - runStart >= 2) {
+  if (currentDisc !== undefined && episodeFiles.length - runStart >= TRACK_REVERSAL_MIN_FILES_PER_DISC) {
     discRuns.push({ disc: currentDisc, startIdx: runStart, endIdx: episodeFiles.length - 1 });
   }
 
@@ -1419,7 +1422,7 @@ export function detectAndApplyTrackOrder(
       revFileRuntimes.push(revSec);
     }
 
-    if (!allHaveDvdData || dvdRuntimes.length < 3) continue;
+    if (!allHaveDvdData || dvdRuntimes.length < TRACK_REVERSAL_MIN_DVD_EPISODES) continue;
 
     // Compute covariance for forward and reverse pairings.
     // Higher covariance = runtime variation patterns align better.

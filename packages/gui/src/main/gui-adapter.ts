@@ -1,16 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
+import { PipelineCancelledError, filterAutoAccepted } from '@bluslate/core';
 import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult, ShowIdentificationResult } from '@bluslate/core';
-
-/**
- * Error thrown when the user cancels the pipeline mid-execution.
- * Caught by the main process pipeline runner to distinguish from real errors.
- */
-export class PipelineCancelledError extends Error {
-  constructor() {
-    super('Pipeline cancelled by user');
-    this.name = 'PipelineCancelledError';
-  }
-}
 
 export interface CancellableGuiAdapter extends UIAdapter {
   /** Signal that the pipeline should stop at the next progress checkpoint. */
@@ -63,15 +53,8 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
         _scanDirectory?: string,
         _client?: TmdbClient,
       ): Promise<MatchResult[]> {
-        // In auto-accept mode, return high-confidence matches directly
         if (autoAccept) {
-          return Promise.resolve(
-            matches.filter(
-              (m) =>
-                m.status !== 'unmatched' &&
-                m.confidence >= minConfidence,
-            ),
-          );
+          return Promise.resolve(filterAutoAccepted(matches, minConfidence));
         }
 
         return new Promise((resolve) => {

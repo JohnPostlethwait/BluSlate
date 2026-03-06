@@ -10,7 +10,7 @@ export async function undoRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/undo', async (request, reply) => {
     const { directory } = request.body as { directory?: string };
     if (!directory || typeof directory !== 'string') {
-      return { restored: 0, failed: 0 };
+      return reply.status(400).send({ error: 'Directory must be a non-empty string' });
     }
 
     const resolvedDir = resolve(directory);
@@ -19,6 +19,10 @@ export async function undoRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(403).send({ error: 'Access denied: path outside media root' });
     }
 
-    return undoRenames(resolvedDir);
+    try {
+      return await undoRenames(resolvedDir);
+    } catch (err) {
+      return reply.status(500).send({ error: `Undo failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
+    }
   });
 }

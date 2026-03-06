@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@bluslate/core': path.resolve(__dirname, '../core/src/index.ts'),
+      '@bluslate/ui': path.resolve(__dirname, '../ui/src'),
     },
   },
   build: {

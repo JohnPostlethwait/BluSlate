@@ -28,8 +28,18 @@ import { undoRoutes } from './routes/undo.js';
 import { registerSocketHandlers } from './socket-handlers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = parseInt(process.env.PORT || '3000', 10);
 const PASSWORD = process.env.BLUSLATE_PASSWORD;
+
+function getPort(): number {
+  const raw = parseInt(process.env.PORT || '3000', 10);
+  if (!Number.isFinite(raw) || raw < 1 || raw > 65535) {
+    console.error(`Error: PORT="${process.env.PORT}" is invalid (must be 1-65535), using 3000`);
+    return 3000;
+  }
+  return raw;
+}
+
+const PORT = getPort();
 
 /** Verify a constant-time string comparison to prevent timing attacks. */
 function safeEqual(a: string, b: string): boolean {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { MatchResultData } from '../types.js';
   import {
     relativePath as relPath,
     confidenceClass,
@@ -35,8 +36,6 @@
   let openTooltipKey = $state<string | null>(null);
 
   // ── Reorder state ──────────────────────────────────────────────────
-  // Maps season label → ordered array of indices into renameable[].
-  // Only populated for seasons where user has reordered files.
   // Tracks each file's original season+episode assignment (by filePath → "season:episode")
   let originalAssignment = $state<Map<string, string>>(new Map());
   // Files the user explicitly clicked to move (by filePath)
@@ -183,9 +182,8 @@
       fileB.parsed.episodeNumbers = [epA.episodeNumber];
     }
 
-    // Track which files the user explicitly moved
+    // Track which file the user explicitly moved (fileA is the one the user clicked)
     userMoved.add(fileA.mediaFile.filePath);
-    userMoved.add(fileB.mediaFile.filePath);
     userMoved = new Set(userMoved);
 
     // Regenerate filenames for both files
@@ -219,7 +217,6 @@
     file.tmdbMatch.episodeTitle = episode.episodeName;
     file.tmdbMatch.runtime = episode.runtime ?? undefined;
     if (targetSeason >= 0) {
-      // Cross-group: update season and seasonEpisodes from another file in that group
       if (file.tmdbMatch.seasonNumber !== targetSeason) {
         const targetGroup = groupedRenameable.find((g) => g.label === targetSeasonLabel);
         const targetMatch = targetGroup?.rows.find((r): r is RenameableRow & { type: 'matched' } => r.type === 'matched');
@@ -266,7 +263,6 @@
       const row = group.rows[ri];
       if (row.type === 'missing') return { type: 'missing', episode: row.episode, groupLabel: group.label };
       if (row.type === 'matched' && !row.isMultiEp) return { type: 'matched', index: row.index, groupLabel: group.label };
-      // Skip multi-ep rows, keep searching
     }
 
     // Cross to adjacent group
@@ -283,11 +279,6 @@
     }
 
     return null;
-  }
-
-  /** Find the row index of a matched file within its group */
-  function findRowIndex(group: RenameableGroup, fileIdx: number): number {
-    return group.rows.findIndex((r) => r.type === 'matched' && r.index === fileIdx);
   }
 
   async function handleMoveUp(groupIndex: number, rowIdx: number, fileIdx: number) {
@@ -748,7 +739,7 @@
   }
 
   tr.user-moved > td {
-    background: rgba(0, 212, 255, 0.08);
+    background: rgba(0, 212, 255, 0.10);
   }
 
   tr.user-moved > td:first-child {
@@ -756,11 +747,11 @@
   }
 
   tr.user-displaced > td {
-    background: rgba(255, 179, 0, 0.06);
+    background: rgba(255, 179, 0, 0.05);
   }
 
   tr.user-displaced > td:first-child {
-    border-left: 3px solid #ffb30066;
+    border-left: 3px solid rgba(255, 179, 0, 0.35);
   }
 
   .col-arrow {

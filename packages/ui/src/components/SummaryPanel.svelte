@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { MatchResultData } from '../types.js';
   import ResultsTable from './ResultsTable.svelte';
 
   interface Props {
@@ -16,13 +17,15 @@
   let total = $derived(renamed + skipped + failed);
   let undoState = $state<'idle' | 'confirming' | 'working' | 'done' | 'error'>('idle');
   let undoResult = $state<{ restored: number; failed: number } | null>(null);
+  let undoError = $state<string>('');
 
   async function executeUndo() {
     undoState = 'working';
     try {
       undoResult = await window.api.undoRenames(scanDirectory);
       undoState = 'done';
-    } catch {
+    } catch (err) {
+      undoError = err instanceof Error ? err.message : 'The log file may be missing or unreadable.';
       undoState = 'error';
     }
   }
@@ -92,7 +95,7 @@
           {/if}
         </p>
       {:else if undoState === 'error'}
-        <p class="undo-error">Failed to undo renames. The log file may be missing or unreadable.</p>
+        <p class="undo-error">Failed to undo renames: {undoError}</p>
       {/if}
     </div>
   {/if}

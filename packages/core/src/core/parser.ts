@@ -2,6 +2,7 @@ import { filenameParse, type ParsedShow } from '@ctrl/video-filename-parser';
 import { MediaType } from '../types/media.js';
 import type { ParsedFilename } from '../types/media.js';
 import { logger } from '../utils/logger.js';
+import { stripExtension } from '../utils/string.js';
 
 // Regex to detect season/episode indicators in the filename
 const TV_INDICATOR = /s\d{1,2}e\d{1,2}/i;
@@ -15,10 +16,6 @@ const PATTERNS = {
   // Air date format: "show.name.2024.01.15.ext"
   airDate: /^(.+?)[\s._-]+(\d{4})\.(\d{2})\.(\d{2})/,
 };
-
-function stripExtension(filename: string): string {
-  return filename.replace(/\.[^.]+$/, '');
-}
 
 function cleanTitle(raw: string): string {
   return raw

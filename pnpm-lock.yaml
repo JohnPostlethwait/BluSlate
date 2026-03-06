@@ -88,6 +88,9 @@ importers:
       '@bluslate/core':
         specifier: workspace:*
         version: link:../core
+      '@bluslate/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@electron-toolkit/preload':
         specifier: ^3.0.2
         version: 3.0.2(electron@35.7.5)
@@ -129,11 +132,20 @@ importers:
         specifier: ^6.0.0
         version: 6.4.1(@types/node@25.2.1)(jiti@2.6.1)(tsx@4.21.0)
 
+  packages/ui:
+    dependencies:
+      svelte:
+        specifier: ^5.0.0
+        version: 5.53.5
+
   packages/web:
     dependencies:
       '@bluslate/core':
         specifier: workspace:*
         version: link:../core
+      '@bluslate/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@fastify/cors':
         specifier: ^11.2.0
         version: 11.2.0

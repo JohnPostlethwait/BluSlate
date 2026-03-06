@@ -25,11 +25,17 @@ function buildAuthHeader(password: string): string {
   return 'Basic ' + btoa(':' + password);
 }
 
-function authFetch(url: string, password: string | undefined, init: RequestInit = {}): Promise<Response> {
-  if (!password) return fetch(url, init);
-  const headers = new Headers(init.headers);
-  headers.set('Authorization', buildAuthHeader(password));
-  return fetch(url, { ...init, headers });
+async function authFetch(url: string, password: string | undefined, init: RequestInit = {}): Promise<Response> {
+  const headers = password ? new Headers(init.headers) : undefined;
+  if (headers && password) {
+    headers.set('Authorization', buildAuthHeader(password));
+  }
+  const res = await fetch(url, headers ? { ...init, headers } : init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || `Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res;
 }
 
 export function createWebApi(password?: string): Window['api'] {

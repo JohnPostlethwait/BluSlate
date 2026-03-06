@@ -1,5 +1,6 @@
 import { confirm, select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
+import { filterAutoAccepted } from '@bluslate/core';
 import type { MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult, ShowIdentificationResult } from '@bluslate/core';
 import { editSingleMatch, displayReviewList, formatRuntimeMmSs } from './editor.js';
 import type { ReviewStatus } from './editor.js';
@@ -19,7 +20,7 @@ export async function confirmRenames(
 
   // Auto-accept high-confidence matches if --yes flag is set
   if (autoAccept) {
-    const autoAccepted = toRename.filter((m) => m.confidence >= minConfidence);
+    const autoAccepted = filterAutoAccepted(matches, minConfidence);
     const needsReview = toRename.filter((m) => m.confidence < minConfidence);
 
     if (needsReview.length === 0) return autoAccepted;

@@ -1,11 +1,8 @@
 import * as path from 'node:path';
 import { parseFilename } from './parser.js';
 import { logger } from '../utils/logger.js';
+import { stripExtension } from '../utils/string.js';
 import type { MediaFile, DirectoryContext, SeasonGroup } from '../types/media.js';
-
-function stripExtension(filename: string): string {
-  return filename.replace(/\.[^.]+$/, '');
-}
 
 // Patterns to extract season/disc info from directory names
 const SEASON_DISC_PATTERNS: Array<{

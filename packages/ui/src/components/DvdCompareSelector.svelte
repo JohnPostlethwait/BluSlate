@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { DvdCompareCandidate } from '../types.js';
+
   interface Props {
     showName: string;
     candidates: DvdCompareCandidate[];

@@ -7,6 +7,7 @@
 
 import { join } from 'node:path';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { VALID_LANGUAGE_RE, MAX_TEMPLATE_LENGTH } from '@bluslate/core';
 
 export interface AppSettings {
   apiKey?: string;
@@ -36,10 +37,18 @@ function applyEnvOverrides(settings: AppSettings): void {
     settings.apiKey = process.env.TMDB_API_KEY;
   }
   if (process.env.BLUSLATE_LANGUAGE) {
-    settings.language = process.env.BLUSLATE_LANGUAGE;
+    if (VALID_LANGUAGE_RE.test(process.env.BLUSLATE_LANGUAGE)) {
+      settings.language = process.env.BLUSLATE_LANGUAGE;
+    } else {
+      console.warn(`Warning: BLUSLATE_LANGUAGE="${process.env.BLUSLATE_LANGUAGE}" is invalid (expected format: en-US), using default`);
+    }
   }
   if (process.env.BLUSLATE_TEMPLATE) {
-    settings.template = process.env.BLUSLATE_TEMPLATE;
+    if (process.env.BLUSLATE_TEMPLATE.length <= MAX_TEMPLATE_LENGTH) {
+      settings.template = process.env.BLUSLATE_TEMPLATE;
+    } else {
+      console.warn(`Warning: BLUSLATE_TEMPLATE exceeds ${MAX_TEMPLATE_LENGTH} characters, ignoring`);
+    }
   }
   if (process.env.BLUSLATE_MIN_CONFIDENCE) {
     const parsed = parseInt(process.env.BLUSLATE_MIN_CONFIDENCE, 10);

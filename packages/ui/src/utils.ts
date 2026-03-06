@@ -1,6 +1,4 @@
-/**
- * Shared utility functions for GUI renderer components.
- */
+import type { MatchResultData } from './types.js';
 
 export function relativePath(filePath: string, scanDirectory: string): string {
   if (!scanDirectory) return filePath;

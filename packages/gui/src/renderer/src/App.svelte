@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import DirectoryPicker from './lib/components/DirectoryPicker.svelte';
-  import ProgressBar from './lib/components/ProgressBar.svelte';
-  import ResultsTable from './lib/components/ResultsTable.svelte';
-  import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
-  import ShowSelector from './lib/components/ShowSelector.svelte';
-  import DvdCompareSelector from './lib/components/DvdCompareSelector.svelte';
-  import SummaryPanel from './lib/components/SummaryPanel.svelte';
+  import ProgressBar from '@bluslate/ui/components/ProgressBar.svelte';
+  import ResultsTable from '@bluslate/ui/components/ResultsTable.svelte';
+  import ConfirmDialog from '@bluslate/ui/components/ConfirmDialog.svelte';
+  import ShowSelector from '@bluslate/ui/components/ShowSelector.svelte';
+  import DvdCompareSelector from '@bluslate/ui/components/DvdCompareSelector.svelte';
+  import SummaryPanel from '@bluslate/ui/components/SummaryPanel.svelte';
 
   // --- Reactive state ---
   let currentView = $state<'setup' | 'running' | 'results' | 'confirm' | 'showSelect' | 'dvdCompareSelect' | 'summary'>('setup');
@@ -27,6 +27,8 @@
   let recursive = $state<boolean>(false);
   let dryRun = $state<boolean>(false);
   let language = $state<string>('en-US');
+  let minConfidence = $state<number>(85);
+  let template = $state<string | undefined>(undefined);
 
   // When true, ignore all pipeline IPC events (user cancelled mid-pipeline)
   let ignoreEvents = $state(false);
@@ -59,6 +61,15 @@
       }
       if (settings.recentDirectories?.length > 0) {
         savedDirectory = settings.recentDirectories[0];
+      }
+      if (settings.language) {
+        language = settings.language;
+      }
+      if (settings.minConfidence != null) {
+        minConfidence = settings.minConfidence;
+      }
+      if (settings.template) {
+        template = settings.template;
       }
     } catch {
       // Settings not available yet, that's OK
@@ -166,7 +177,8 @@
       recursive: event.recursive,
       language,
       autoAccept: false,
-      minConfidence: 85,
+      minConfidence,
+      template,
     });
   }
 

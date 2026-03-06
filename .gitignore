@@ -5,6 +5,7 @@ dist/
 coverage/
 .bluslate-log.json
 .claude/
+.DS_Store
 
 # electron-builder output
 packages/gui/release/

@@ -6,6 +6,9 @@ export interface AppSettings {
   apiKey?: string;
   recentDirectories: string[];
   windowBounds?: { x: number; y: number; width: number; height: number };
+  language?: string;
+  minConfidence?: number;
+  template?: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {

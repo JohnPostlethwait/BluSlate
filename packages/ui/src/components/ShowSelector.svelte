@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { ShowCandidate } from '../types.js';
+
   interface Props {
     showName: string;
     candidates: ShowCandidate[];

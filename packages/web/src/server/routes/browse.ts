@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-
-const MEDIA_EXTENSIONS = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.ts', '.m2ts', '.wmv', '.mov']);
+import { VIDEO_EXTENSIONS } from '@bluslate/core';
 
 function getMediaRoot(): string {
   return process.env.MEDIA_ROOT || '/media';
@@ -42,7 +41,7 @@ export async function browseRoutes(app: FastifyInstance): Promise<void> {
             mediaCount = subEntries.filter((e) => {
               if (!e.isFile()) return false;
               const ext = e.name.substring(e.name.lastIndexOf('.')).toLowerCase();
-              return MEDIA_EXTENSIONS.has(ext);
+              return VIDEO_EXTENSIONS.has(ext);
             }).length;
           } catch {
             // Can't read subdirectory — that's OK
@@ -50,7 +49,7 @@ export async function browseRoutes(app: FastifyInstance): Promise<void> {
           result.push({ name: entry.name, type: 'directory', mediaCount });
         } else if (entry.isFile()) {
           const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
-          if (MEDIA_EXTENSIONS.has(ext)) {
+          if (VIDEO_EXTENSIONS.has(ext)) {
             try {
               const fileStat = await stat(join(targetPath, entry.name));
               result.push({ name: entry.name, type: 'file', size: fileStat.size });

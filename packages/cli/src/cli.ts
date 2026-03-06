@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { createRequire } from 'node:module';
-import { buildConfig, saveApiKey, setFfprobePath, isFfprobeAvailable } from '@bluslate/core';
+import { buildConfig, saveApiKey, setFfprobePath, isFfprobeAvailable, sanitizeErrorMessage, VALID_LANGUAGE_RE, MAX_TEMPLATE_LENGTH } from '@bluslate/core';
 import { runPipeline } from '@bluslate/core';
 import { setVerbose } from '@bluslate/core';
 import chalk from 'chalk';
@@ -68,26 +68,40 @@ Examples:
       }
 
       try {
+        // Validate --min-confidence
+        const rawConfidence = parseInt(options['minConfidence'] as string, 10);
+        if (!Number.isFinite(rawConfidence) || rawConfidence < 0 || rawConfidence > 100) {
+          throw new Error('--min-confidence must be a number between 0 and 100');
+        }
+
+        // Validate --lang
+        const lang = options['lang'] as string;
+        if (!VALID_LANGUAGE_RE.test(lang)) {
+          throw new Error(`--lang must be a valid language code (e.g. en-US, ja), got: "${lang}"`);
+        }
+
+        // Validate --template length
+        const template = options['template'] as string | undefined;
+        if (template && template.length > MAX_TEMPLATE_LENGTH) {
+          throw new Error(`--template too long (max ${MAX_TEMPLATE_LENGTH} characters)`);
+        }
+
         const config = await buildConfig({
           directory,
           apiKey: options['apiKey'] as string | undefined,
           dryRun: options['dryRun'] as boolean,
-          template: options['template'] as string | undefined,
+          template,
           recursive: options['recursive'] as boolean,
           verbose: options['verbose'] as boolean,
           yes: options['yes'] as boolean,
-          minConfidence: parseInt(options['minConfidence'] as string, 10),
-          lang: options['lang'] as string,
+          minConfidence: rawConfidence,
+          lang,
         });
 
         const ui = createCliAdapter();
         await runPipeline(config, ui);
       } catch (err) {
-        if (err instanceof Error) {
-          console.error(`\nError: ${err.message}\n`);
-        } else {
-          console.error('\nAn unexpected error occurred.\n');
-        }
+        console.error(`\nError: ${sanitizeErrorMessage(err)}\n`);
         process.exit(1);
       }
     });
@@ -102,9 +116,7 @@ Examples:
         await saveApiKey(apiKey);
         console.log('\nConfiguration saved successfully.\n');
       } catch (err) {
-        if (err instanceof Error) {
-          console.error(`\nError: ${err.message}\n`);
-        }
+        console.error(`\nError: ${sanitizeErrorMessage(err)}\n`);
         process.exit(1);
       }
     });

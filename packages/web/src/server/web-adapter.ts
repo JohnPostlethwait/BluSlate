@@ -7,14 +7,8 @@
  */
 
 import type { Socket } from 'socket.io';
+import { PipelineCancelledError, filterAutoAccepted } from '@bluslate/core';
 import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult, ShowIdentificationResult } from '@bluslate/core';
-
-export class PipelineCancelledError extends Error {
-  constructor() {
-    super('Pipeline cancelled by user');
-    this.name = 'PipelineCancelledError';
-  }
-}
 
 export interface CancellableWebAdapter extends UIAdapter {
   cancel(): void;
@@ -58,11 +52,7 @@ export function createWebAdapter(socket: Socket): CancellableWebAdapter {
         _client?: TmdbClient,
       ): Promise<MatchResult[]> {
         if (autoAccept) {
-          return Promise.resolve(
-            matches.filter(
-              (m) => m.status !== 'unmatched' && m.confidence >= minConfidence,
-            ),
-          );
+          return Promise.resolve(filterAutoAccepted(matches, minConfidence));
         }
 
         return new Promise((resolve) => {

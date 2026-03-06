@@ -56,13 +56,14 @@ export {
 export type { ValidatedPipelineOptions } from './utils/validation.js';
 
 // Utils
+export { filterAutoAccepted } from './utils/filter.js';
 export { safeRename } from './utils/filesystem.js';
 export { sanitizeFilename } from './utils/sanitize.js';
 export { logger, setVerbose, setLogLevel, LogLevel } from './utils/logger.js';
 export { getConfigDir, getConfigFilePath } from './utils/platform.js';
 
 // Errors
-export { FatalError, AuthenticationError } from './errors.js';
+export { FatalError, AuthenticationError, PipelineCancelledError } from './errors.js';
 
 // Types
 export { MediaType, VIDEO_EXTENSIONS } from './types/media.js';

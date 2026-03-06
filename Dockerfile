@@ -12,13 +12,15 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # Copy only the packages needed for the web build (skip cli/gui)
 COPY packages/core/package.json packages/core/
+COPY packages/ui/package.json packages/ui/
 COPY packages/web/package.json packages/web/
 
-# Install dependencies (only core + web workspaces)
-RUN pnpm install --frozen-lockfile --filter @bluslate/core --filter @bluslate/web
+# Install dependencies (only core + ui + web workspaces)
+RUN pnpm install --frozen-lockfile --filter @bluslate/core --filter @bluslate/ui --filter @bluslate/web
 
 # Copy source code
 COPY packages/core/ packages/core/
+COPY packages/ui/ packages/ui/
 COPY packages/web/ packages/web/
 COPY tsconfig.json ./
 
@@ -38,10 +40,11 @@ RUN corepack enable pnpm
 # Copy workspace config
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core/package.json packages/core/
+COPY packages/ui/package.json packages/ui/
 COPY packages/web/package.json packages/web/
 
 # Install production dependencies only
-RUN pnpm install --frozen-lockfile --filter @bluslate/core --filter @bluslate/web --prod
+RUN pnpm install --frozen-lockfile --filter @bluslate/core --filter @bluslate/ui --filter @bluslate/web --prod
 
 # Copy built output from builder stage
 COPY --from=builder /app/packages/core/dist/ packages/core/dist/

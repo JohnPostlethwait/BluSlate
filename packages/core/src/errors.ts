@@ -18,3 +18,14 @@ export class AuthenticationError extends FatalError {
     this.name = 'AuthenticationError';
   }
 }
+
+/**
+ * Thrown when the user cancels the pipeline mid-execution.
+ * Used by GUI and Web adapters to unwind the pipeline cleanly.
+ */
+export class PipelineCancelledError extends Error {
+  constructor() {
+    super('Pipeline cancelled by user');
+    this.name = 'PipelineCancelledError';
+  }
+}

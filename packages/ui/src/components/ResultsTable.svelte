@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { MatchResultData } from '../types.js';
   import {
     relativePath as relPath,
     confidenceClass,

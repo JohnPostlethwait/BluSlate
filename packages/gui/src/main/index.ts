@@ -271,9 +271,9 @@ app.whenReady().then(async () => {
   );
 
   // Undo renames using the .bluslate-log.json file
-  ipcMain.handle('undo:execute', (_event, directory: string) => {
+  ipcMain.handle('undo:execute', async (_event, directory: string) => {
     if (!directory || typeof directory !== 'string') {
-      return { restored: 0, failed: 0 };
+      throw new Error('Directory must be a non-empty string');
     }
     return undoRenames(directory);
   });

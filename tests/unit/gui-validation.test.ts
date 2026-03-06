@@ -6,7 +6,9 @@ import {
   MAX_API_KEY_LENGTH,
   MAX_TEMPLATE_LENGTH,
 } from '../../packages/core/src/utils/validation.js';
-import { AuthenticationError, FatalError } from '../../packages/core/src/errors.js';
+import { AuthenticationError, FatalError, PipelineCancelledError } from '../../packages/core/src/errors.js';
+import { filterAutoAccepted } from '../../packages/core/src/utils/filter.js';
+import type { MatchResult } from '../../packages/core/src/types/media.js';
 
 // ---------------------------------------------------------------------------
 // validatePipelineOptions
@@ -294,5 +296,88 @@ describe('validation constants', () => {
   it('should have expected max lengths', () => {
     expect(MAX_API_KEY_LENGTH).toBe(1024);
     expect(MAX_TEMPLATE_LENGTH).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PipelineCancelledError
+// ---------------------------------------------------------------------------
+
+describe('PipelineCancelledError', () => {
+  it('should have correct name and message', () => {
+    const err = new PipelineCancelledError();
+    expect(err.name).toBe('PipelineCancelledError');
+    expect(err.message).toBe('Pipeline cancelled by user');
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('should not be a FatalError', () => {
+    const err = new PipelineCancelledError();
+    expect(err).not.toBeInstanceOf(FatalError);
+  });
+
+  it('should be distinguishable by name property', () => {
+    const err = new PipelineCancelledError();
+    expect((err as Error).name === 'PipelineCancelledError').toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterAutoAccepted
+// ---------------------------------------------------------------------------
+
+describe('filterAutoAccepted', () => {
+  function makeMatch(status: string, confidence: number): MatchResult {
+    return {
+      mediaFile: { fileName: 'test.mkv', filePath: '/test.mkv', extension: '.mkv' },
+      status: status as MatchResult['status'],
+      confidence,
+      newFilename: 'new.mkv',
+      warnings: [],
+    } as MatchResult;
+  }
+
+  it('should return matches at or above the confidence threshold', () => {
+    const matches = [
+      makeMatch('matched', 90),
+      makeMatch('matched', 85),
+      makeMatch('matched', 60),
+    ];
+    const result = filterAutoAccepted(matches, 85);
+    expect(result).toHaveLength(2);
+    expect(result[0].confidence).toBe(90);
+    expect(result[1].confidence).toBe(85);
+  });
+
+  it('should exclude unmatched files regardless of confidence', () => {
+    const matches = [
+      makeMatch('matched', 95),
+      makeMatch('unmatched', 95),
+    ];
+    const result = filterAutoAccepted(matches, 0);
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe('matched');
+  });
+
+  it('should return empty array when no matches meet threshold', () => {
+    const matches = [
+      makeMatch('matched', 50),
+      makeMatch('matched', 60),
+    ];
+    const result = filterAutoAccepted(matches, 85);
+    expect(result).toHaveLength(0);
+  });
+
+  it('should return empty array for empty input', () => {
+    expect(filterAutoAccepted([], 85)).toHaveLength(0);
+  });
+
+  it('should include ambiguous status matches above threshold', () => {
+    const matches = [
+      makeMatch('ambiguous', 90),
+      makeMatch('matched', 90),
+    ];
+    const result = filterAutoAccepted(matches, 85);
+    expect(result).toHaveLength(2);
   });
 });

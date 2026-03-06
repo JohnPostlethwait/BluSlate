@@ -21,7 +21,6 @@ const api = {
     autoAccept: boolean;
     minConfidence: number;
     template?: string;
-    mediaType?: string;
   }): void => {
     ipcRenderer.send('pipeline:start', options);
   },
@@ -143,7 +142,7 @@ const api = {
   checkFfprobe: (): Promise<boolean> => ipcRenderer.invoke('ffprobe:check'),
 
   // Settings
-  loadSettings: (): Promise<{ apiKey?: string; recentDirectories: string[] }> =>
+  loadSettings: (): Promise<{ apiKey?: string; recentDirectories: string[]; language?: string; minConfidence?: number; template?: string }> =>
     ipcRenderer.invoke('settings:load'),
 
   saveApiKey: (apiKey: string): Promise<void> =>

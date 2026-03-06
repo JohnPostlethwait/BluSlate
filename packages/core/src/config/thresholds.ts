@@ -74,3 +74,14 @@ export const CONFIDENCE_MULTI_EPISODE_PENALTY = 15;
 
 /** Minimum confidence score for a match to be classified as 'matched' (vs 'ambiguous') */
 export const CONFIDENCE_MATCHED_THRESHOLD = 60;
+
+// ── Batch matching ────────────────────────────────────────────────
+
+/** Cost penalty added to multi-episode candidates to prefer single-episode when close */
+export const MULTI_EPISODE_CANDIDATE_PENALTY = 3;
+
+/** Minimum files per disc run required before considering track reversal */
+export const TRACK_REVERSAL_MIN_FILES_PER_DISC = 2;
+
+/** Minimum DVDCompare episodes per disc required for covariance-based track order */
+export const TRACK_REVERSAL_MIN_DVD_EPISODES = 3;
