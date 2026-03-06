@@ -53,5 +53,6 @@ ENV MEDIA_ROOT=/media
 ENV BLUSLATE_DATA=/data
 ENV BLUSLATE_LANGUAGE=en-US
 ENV BLUSLATE_MIN_CONFIDENCE=85
+# Minimum confidence threshold — matches at or above are pre-approved for review
 
 CMD ["node", "packages/web/dist/server/index.js"]

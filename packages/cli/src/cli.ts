@@ -22,8 +22,8 @@ export function createProgram(): Command {
     .option('--template <pattern>', 'Custom naming template')
     .option('-r, --recursive', 'Scan subdirectories', false)
     .option('-v, --verbose', 'Increase log verbosity', false)
-    .option('-y, --yes', 'Auto-accept high-confidence matches', false)
-    .option('--min-confidence <number>', 'Minimum confidence to auto-accept (0-100)', '85')
+    .option('-y, --yes', 'Skip review for matches above the confidence threshold', false)
+    .option('--min-confidence <number>', 'Minimum confidence threshold for matching (0-100)', '85')
     .option('--lang <code>', 'TMDb language code', 'en-US')
     .addHelpText('after', `
 Environment Variables:

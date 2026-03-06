@@ -64,8 +64,8 @@ bluslate <directory> [options]
 | `-k, --api-key <key>` | TMDb API Read Access Token | — |
 | `--template <pattern>` | Custom naming template | — |
 | `-r, --recursive` | Scan subdirectories | `false` |
-| `-y, --yes` | Auto-accept high-confidence matches | `false` |
-| `--min-confidence <n>` | Minimum confidence to auto-accept (0–100) | `85` |
+| `-y, --yes` | Skip review for matches above the confidence threshold | `false` |
+| `--min-confidence <n>` | Minimum confidence threshold for matching (0–100) | `85` |
 | `--lang <code>` | TMDb language code | `en-US` |
 
 **Examples:**
@@ -137,7 +137,7 @@ docker compose up -d
 | `TMDB_API_KEY` | Yes | — | TMDb Read Access Token |
 | `BLUSLATE_LANGUAGE` | No | `en-US` | BCP 47 language code for TMDb metadata |
 | `BLUSLATE_TEMPLATE` | No | `{show_name} - S{season}E{episode} - {episode_title}` | Default naming template |
-| `BLUSLATE_MIN_CONFIDENCE` | No | `85` | Minimum confidence score (0–100) to auto-accept |
+| `BLUSLATE_MIN_CONFIDENCE` | No | `85` | Minimum confidence threshold (0–100) — matches at or above are pre-approved for review |
 | `BLUSLATE_PASSWORD` | No | — | Enable password auth (see security note below) |
 | `PORT` | No | `3000` | Port the server listens on inside the container |
 

@@ -30,7 +30,8 @@ services:
       # Available placeholders: {show_name}, {year}, {season}, {episode}, {episode_title}, {ext}
       # - BLUSLATE_TEMPLATE={show_name} - S{season}E{episode} - {episode_title}
 
-      # Optional — Minimum confidence score (0-100) to auto-accept matches (default: 85)
+      # Optional — Minimum confidence threshold (0-100) for matching (default: 85)
+      # Matches at or above this score are pre-approved; lower matches require manual review
       # - BLUSLATE_MIN_CONFIDENCE=85
 
       # Optional — Enable password authentication
