@@ -130,7 +130,7 @@ docker compose up -d
 ```
 
 > [!TIP]
-> To pin to a specific version, replace `latest` with a version tag (e.g., `ghcr.io/johnpostlethwait/bluslate:0.2.2`). To build from source instead, replace `image:` with `build: .` and clone the repo.
+> See [`docker-compose.example.yml`](docker-compose.example.yml) for a fully commented configuration template. To pin to a specific version, replace `latest` with a version tag (e.g., `ghcr.io/johnpostlethwait/bluslate:0.2.2`). To build from source instead, replace `image:` with `build: .` and clone the repo.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|

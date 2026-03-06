@@ -1,0 +1,45 @@
+# BluSlate — Example Docker Compose Configuration
+#
+# Copy this file to docker-compose.yml and update the values below.
+#
+#   cp docker-compose.example.yml docker-compose.yml
+#   docker compose up -d
+#
+# Then open http://localhost:3000 in your browser.
+
+services:
+  bluslate:
+    image: ghcr.io/johnpostlethwait/bluslate:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount your media directory here (required)
+      - /path/to/media:/media
+
+      # Persistent config and undo history
+      - bluslate-data:/data
+    environment:
+      # Required — TMDb Read Access Token
+      # Get one free at https://www.themoviedb.org/settings/api
+      - TMDB_API_KEY=your-key-here
+
+      # Optional — BCP 47 language code for TMDb metadata (default: en-US)
+      # - BLUSLATE_LANGUAGE=en-US
+
+      # Optional — Default naming template
+      # Available placeholders: {show_name}, {year}, {season}, {episode}, {episode_title}, {ext}
+      # - BLUSLATE_TEMPLATE={show_name} - S{season}E{episode} - {episode_title}
+
+      # Optional — Minimum confidence score (0-100) to auto-accept matches (default: 85)
+      # - BLUSLATE_MIN_CONFIDENCE=85
+
+      # Optional — Enable password authentication
+      # WARNING: Without this, anyone who can reach port 3000 can rename your files.
+      # - BLUSLATE_PASSWORD=a-strong-random-password
+
+      # Optional — Port the server listens on inside the container (default: 3000)
+      # - PORT=3000
+    restart: unless-stopped
+
+volumes:
+  bluslate-data:
