@@ -131,6 +131,9 @@
     cleanups.push(
       api.onPipelineComplete(() => {
         ignoreEvents = false;
+        if (currentView === 'running') {
+          currentView = 'setup';
+        }
       }),
     );
 
@@ -186,6 +189,7 @@
     // Unwrap Svelte 5 $state proxies so Electron IPC structured clone works
     window.api.respondConfirmRenames(JSON.parse(JSON.stringify(confirmed)));
     currentView = 'running';
+    progressEvent = 'start';
     progressMessage = 'Renaming files...';
   }
 

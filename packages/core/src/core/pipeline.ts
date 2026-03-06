@@ -119,6 +119,7 @@ export async function runPipeline(config: AppConfig, ui: UIAdapter): Promise<voi
 
   if (confirmed.length === 0) {
     logger.info('No files selected for renaming.');
+    ui.display.displaySummary(0, 0, 0, false);
     return;
   }
 

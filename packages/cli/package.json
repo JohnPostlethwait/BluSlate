@@ -1,6 +1,6 @@
 {
   "name": "@bluslate/cli",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "CLI frontend for BluSlate — rename TV show files using TMDb metadata",
   "type": "module",
   "bin": {

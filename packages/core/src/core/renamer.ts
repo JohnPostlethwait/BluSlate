@@ -19,6 +19,7 @@ export async function executeRenames(
   dryRun: boolean,
 ): Promise<RenameEntry[]> {
   const renames: RenameEntry[] = [];
+  logger.info(`executeRenames: ${matches.length} file(s) to process (dryRun=${dryRun})`);
 
   for (const match of matches) {
     if (match.status === 'unmatched') continue;
@@ -59,6 +60,7 @@ export async function executeRenames(
     }
   }
 
+  logger.info(`executeRenames: ${renames.length} succeeded, ${matches.length - renames.length} failed/skipped`);
   return renames;
 }
 
