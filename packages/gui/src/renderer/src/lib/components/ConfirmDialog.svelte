@@ -37,13 +37,22 @@
   // ── Reorder state ──────────────────────────────────────────────────
   // Maps season label → ordered array of indices into renameable[].
   // Only populated for seasons where user has reordered files.
-  let fileOrder = $state<Map<string, number[]>>(new Map());
-  // Maps season label → the original order (snapshot at first interaction)
-  let originalOrder = $state<Map<string, number[]>>(new Map());
+  // Tracks each file's original season+episode assignment (by filePath → "season:episode")
+  let originalAssignment = $state<Map<string, string>>(new Map());
   // Files the user explicitly clicked to move (by filePath)
   let userMoved = $state<Set<string>>(new Set());
   // Reorder version counter — bumped on each reorder to trigger re-derivation
   let reorderVersion = $state(0);
+
+  /** Snapshot a file's current assignment if not already captured */
+  function snapshotOriginal(fileIdx: number) {
+    const file = renameable[fileIdx];
+    const key = file.mediaFile.filePath;
+    if (originalAssignment.has(key)) return;
+    const tm = file.tmdbMatch;
+    originalAssignment.set(key, `${tm?.seasonNumber}:${tm?.episodeNumber}`);
+    originalAssignment = new Map(originalAssignment);
+  }
 
   /**
    * Derive reorder status for each file:
@@ -54,14 +63,12 @@
   let reorderStatus = $derived.by(() => {
     void reorderVersion;
     const status = new Map<string, 'moved' | 'displaced'>();
-    for (const [label, order] of fileOrder) {
-      const orig = originalOrder.get(label);
-      if (!orig) continue;
-      for (let i = 0; i < order.length; i++) {
-        if (order[i] !== orig[i]) {
-          const filePath = renameable[order[i]].mediaFile.filePath;
-          status.set(filePath, userMoved.has(filePath) ? 'moved' : 'displaced');
-        }
+    for (const [filePath, origKey] of originalAssignment) {
+      const file = renameable.find((m) => m.mediaFile.filePath === filePath);
+      if (!file) continue;
+      const currentKey = `${file.tmdbMatch?.seasonNumber}:${file.tmdbMatch?.episodeNumber}`;
+      if (currentKey !== origKey) {
+        status.set(filePath, userMoved.has(filePath) ? 'moved' : 'displaced');
       }
     }
     return status;
@@ -126,110 +133,181 @@
     return tm.episodeNumberEnd !== undefined && tm.episodeNumberEnd !== tm.episodeNumber;
   }
 
-  /** Move a file within a season group and update episode assignments */
-  async function moveFile(seasonLabel: string, fromPos: number, toPos: number) {
-    // Get or initialize the file order for this season
-    let order = fileOrder.get(seasonLabel);
-    if (!order) {
-      // Initialize from current groupedRenameable
-      const group = groupedRenameable.find((g) => g.label === seasonLabel);
-      if (!group) return;
-      order = group.rows
-        .filter((r): r is RenameableRow & { type: 'matched' } => r.type === 'matched' && !r.isMultiEp)
-        .map((r) => r.index);
-      // Snapshot the original order for comparison
-      originalOrder.set(seasonLabel, [...order]);
-      originalOrder = new Map(originalOrder);
-    }
-
-    if (fromPos < 0 || fromPos >= order.length || toPos < 0 || toPos >= order.length) return;
-
-    // Splice: remove from fromPos, insert at toPos
-    const [moved] = order.splice(fromPos, 1);
-    order.splice(toPos, 0, moved);
-
-    // Track this file as explicitly moved by the user
-    userMoved.add(renameable[moved].mediaFile.filePath);
-    userMoved = new Set(userMoved);
-
-    // Save updated order
-    fileOrder.set(seasonLabel, [...order]);
-    // Trigger re-derivation
-    fileOrder = new Map(fileOrder);
-
-    // Apply episode reassignment
-    await applyReorder(seasonLabel, order);
+  function parseSeasonNumber(label: string): number {
+    const m = label.match(/Season\s+(\d+)/);
+    return m ? parseInt(m[1], 10) : -1;
   }
 
-  /** Re-assign episode data to files based on the user's ordering */
-  async function applyReorder(seasonLabel: string, order: number[]) {
-    // Get the season's episode list from the first match
-    const firstMatch = renameable[order[0]];
-    const seasonEpisodes = firstMatch?.tmdbMatch?.seasonEpisodes;
-    if (!seasonEpisodes) return;
+  /** Swap two files' episode assignments and regenerate their filenames */
+  async function swapEpisodes(idxA: number, idxB: number) {
+    const fileA = renameable[idxA];
+    const fileB = renameable[idxB];
+    if (!fileA.tmdbMatch || !fileB.tmdbMatch) return;
 
-    // Build list of available episode slots (excluding those consumed by multi-ep files)
-    const multiEpNums = new Set<number>();
-    for (const m of renameable) {
-      if (isMultiEpisode(m) && m.tmdbMatch?.seasonNumber !== undefined) {
-        const tm = m.tmdbMatch;
-        const label = `Season ${tm.seasonNumber}`;
-        if (label !== seasonLabel) continue;
-        if (tm.episodeNumber !== undefined) multiEpNums.add(tm.episodeNumber);
-        if (tm.episodeNumberEnd !== undefined) {
-          for (let ep = tm.episodeNumber; ep <= tm.episodeNumberEnd; ep++) {
-            multiEpNums.add(ep);
-          }
-        }
-      }
+    // Snapshot original assignments before any mutation
+    snapshotOriginal(idxA);
+    snapshotOriginal(idxB);
+
+    // Capture original episode info from both files
+    const epA = {
+      episodeNumber: fileA.tmdbMatch.episodeNumber,
+      episodeTitle: fileA.tmdbMatch.episodeTitle,
+      runtime: fileA.tmdbMatch.runtime,
+      seasonNumber: fileA.tmdbMatch.seasonNumber,
+      seasonEpisodes: fileA.tmdbMatch.seasonEpisodes,
+    };
+    const epB = {
+      episodeNumber: fileB.tmdbMatch.episodeNumber,
+      episodeTitle: fileB.tmdbMatch.episodeTitle,
+      runtime: fileB.tmdbMatch.runtime,
+      seasonNumber: fileB.tmdbMatch.seasonNumber,
+      seasonEpisodes: fileB.tmdbMatch.seasonEpisodes,
+    };
+
+    // Swap episode assignments
+    fileA.tmdbMatch.episodeNumber = epB.episodeNumber;
+    fileA.tmdbMatch.episodeTitle = epB.episodeTitle;
+    fileA.tmdbMatch.runtime = epB.runtime;
+    fileA.tmdbMatch.seasonNumber = epB.seasonNumber;
+    fileA.tmdbMatch.seasonEpisodes = epB.seasonEpisodes;
+    if (fileA.parsed.episodeNumbers) {
+      fileA.parsed.episodeNumbers = [epB.episodeNumber];
     }
 
-    const availableEpisodes = seasonEpisodes.filter((ep) => !multiEpNums.has(ep.episodeNumber));
-
-    // Zip: file[i] → episode[i]
-    const itemsToRegenerate: Array<{ idx: number; tmdbMatch: MatchResultData['tmdbMatch']; extension: string }> = [];
-
-    for (let i = 0; i < order.length && i < availableEpisodes.length; i++) {
-      const matchIdx = order[i];
-      const m = renameable[matchIdx];
-      const ep = availableEpisodes[i];
-      if (!m.tmdbMatch) continue;
-
-      // Update episode assignment
-      m.tmdbMatch.episodeNumber = ep.episodeNumber;
-      m.tmdbMatch.episodeTitle = ep.episodeName;
-      m.tmdbMatch.runtime = ep.runtime ?? undefined;
-      if (m.parsed.episodeNumbers) {
-        m.parsed.episodeNumbers = [ep.episodeNumber];
-      }
-
-      itemsToRegenerate.push({
-        idx: matchIdx,
-        tmdbMatch: { ...m.tmdbMatch },
-        extension: m.mediaFile.extension,
-      });
+    fileB.tmdbMatch.episodeNumber = epA.episodeNumber;
+    fileB.tmdbMatch.episodeTitle = epA.episodeTitle;
+    fileB.tmdbMatch.runtime = epA.runtime;
+    fileB.tmdbMatch.seasonNumber = epA.seasonNumber;
+    fileB.tmdbMatch.seasonEpisodes = epA.seasonEpisodes;
+    if (fileB.parsed.episodeNumbers) {
+      fileB.parsed.episodeNumbers = [epA.episodeNumber];
     }
 
-    // Regenerate filenames via IPC
-    if (itemsToRegenerate.length > 0) {
-      try {
-        const newFilenames = await window.api.regenerateFilenames(
-          itemsToRegenerate.map((item) => ({
-            tmdbMatch: item.tmdbMatch as Record<string, unknown>,
-            extension: item.extension,
-          })),
-        );
-        for (let i = 0; i < itemsToRegenerate.length; i++) {
-          renameable[itemsToRegenerate[i].idx].newFilename = newFilenames[i];
-        }
-      } catch {
-        // Filename regeneration failed — episode data is already updated,
-        // filename will be stale but the confirm response carries tmdbMatch
-      }
+    // Track which files the user explicitly moved
+    userMoved.add(fileA.mediaFile.filePath);
+    userMoved.add(fileB.mediaFile.filePath);
+    userMoved = new Set(userMoved);
+
+    // Regenerate filenames for both files
+    try {
+      const newFilenames = await window.api.regenerateFilenames([
+        { tmdbMatch: { ...fileA.tmdbMatch } as Record<string, unknown>, extension: fileA.mediaFile.extension },
+        { tmdbMatch: { ...fileB.tmdbMatch } as Record<string, unknown>, extension: fileB.mediaFile.extension },
+      ]);
+      renameable[idxA].newFilename = newFilenames[0];
+      renameable[idxB].newFilename = newFilenames[1];
+    } catch {
+      // Filename regeneration failed — episode data already updated
     }
 
     // Bump version to trigger UI re-derivation
     reorderVersion++;
+  }
+
+  /** Move a file into a missing episode slot (no other file affected) */
+  async function moveToMissing(fileIdx: number, episode: MissingEpisode, targetSeasonLabel: string) {
+    const file = renameable[fileIdx];
+    if (!file.tmdbMatch) return;
+
+    const targetSeason = parseSeasonNumber(targetSeasonLabel);
+
+    // Snapshot original assignment before mutation
+    snapshotOriginal(fileIdx);
+
+    // Update the file's episode assignment
+    file.tmdbMatch.episodeNumber = episode.episodeNumber;
+    file.tmdbMatch.episodeTitle = episode.episodeName;
+    file.tmdbMatch.runtime = episode.runtime ?? undefined;
+    if (targetSeason >= 0) {
+      // Cross-group: update season and seasonEpisodes from another file in that group
+      if (file.tmdbMatch.seasonNumber !== targetSeason) {
+        const targetGroup = groupedRenameable.find((g) => g.label === targetSeasonLabel);
+        const targetMatch = targetGroup?.rows.find((r): r is RenameableRow & { type: 'matched' } => r.type === 'matched');
+        if (targetMatch?.match.tmdbMatch?.seasonEpisodes) {
+          file.tmdbMatch.seasonEpisodes = targetMatch.match.tmdbMatch.seasonEpisodes;
+        }
+      }
+      file.tmdbMatch.seasonNumber = targetSeason;
+    }
+    if (file.parsed.episodeNumbers) {
+      file.parsed.episodeNumbers = [episode.episodeNumber];
+    }
+
+    userMoved.add(file.mediaFile.filePath);
+    userMoved = new Set(userMoved);
+
+    // Regenerate filename
+    try {
+      const newFilenames = await window.api.regenerateFilenames([
+        { tmdbMatch: { ...file.tmdbMatch } as Record<string, unknown>, extension: file.mediaFile.extension },
+      ]);
+      renameable[fileIdx].newFilename = newFilenames[0];
+    } catch {
+      // Filename regeneration failed — episode data already updated
+    }
+
+    reorderVersion++;
+  }
+
+  /**
+   * Find the adjacent movable target row (up or down), skipping multi-ep rows.
+   * Returns { type: 'matched', index } or { type: 'missing', episode } or null.
+   */
+  function findAdjacentTarget(
+    groupIndex: number,
+    rowIndex: number,
+    direction: 'up' | 'down',
+  ): { type: 'matched'; index: number; groupLabel: string } | { type: 'missing'; episode: MissingEpisode; groupLabel: string } | null {
+    const group = groupedRenameable[groupIndex];
+    const step = direction === 'up' ? -1 : 1;
+
+    // Search within current group first
+    for (let ri = rowIndex + step; ri >= 0 && ri < group.rows.length; ri += step) {
+      const row = group.rows[ri];
+      if (row.type === 'missing') return { type: 'missing', episode: row.episode, groupLabel: group.label };
+      if (row.type === 'matched' && !row.isMultiEp) return { type: 'matched', index: row.index, groupLabel: group.label };
+      // Skip multi-ep rows, keep searching
+    }
+
+    // Cross to adjacent group
+    const nextGi = groupIndex + step;
+    if (nextGi < 0 || nextGi >= groupedRenameable.length) return null;
+    const nextGroup = groupedRenameable[nextGi];
+    const startRow = direction === 'up' ? nextGroup.rows.length - 1 : 0;
+    const endRow = direction === 'up' ? -1 : nextGroup.rows.length;
+
+    for (let ri = startRow; ri !== endRow; ri += step) {
+      const row = nextGroup.rows[ri];
+      if (row.type === 'missing') return { type: 'missing', episode: row.episode, groupLabel: nextGroup.label };
+      if (row.type === 'matched' && !row.isMultiEp) return { type: 'matched', index: row.index, groupLabel: nextGroup.label };
+    }
+
+    return null;
+  }
+
+  /** Find the row index of a matched file within its group */
+  function findRowIndex(group: RenameableGroup, fileIdx: number): number {
+    return group.rows.findIndex((r) => r.type === 'matched' && r.index === fileIdx);
+  }
+
+  async function handleMoveUp(groupIndex: number, rowIdx: number, fileIdx: number) {
+    const target = findAdjacentTarget(groupIndex, rowIdx, 'up');
+    if (!target) return;
+    if (target.type === 'matched') {
+      await swapEpisodes(fileIdx, target.index);
+    } else {
+      await moveToMissing(fileIdx, target.episode, target.groupLabel);
+    }
+  }
+
+  async function handleMoveDown(groupIndex: number, rowIdx: number, fileIdx: number) {
+    const target = findAdjacentTarget(groupIndex, rowIdx, 'down');
+    if (!target) return;
+    if (target.type === 'matched') {
+      await swapEpisodes(fileIdx, target.index);
+    } else {
+      await moveToMissing(fileIdx, target.episode, target.groupLabel);
+    }
   }
 
   let hasDvdCompare = $derived(renameable.some((m) => m.dvdCompareUsed));
@@ -281,85 +359,41 @@
       let matchedCount: number;
       let movableCount = 0;
 
-      // Check if user has a custom file order for this season
-      const customOrder = fileOrder.get(label);
-
       if (seasonEpisodes) {
         totalCount = seasonEpisodes.length;
         matchedCount = matchedEpNums.size;
         rows = [];
 
-        if (customOrder) {
-          // User has reordered: build rows from custom order
-          // First, add multi-ep files in their episode positions
-          const multiEpItems = items.filter((item) => item.isMultiEp);
-          const multiEpByEp = new Map<number, IndexedItem>();
-          for (const item of multiEpItems) {
-            const tm = item.match.tmdbMatch;
-            if (tm?.episodeNumber !== undefined) {
-              multiEpByEp.set(tm.episodeNumber, item);
-            }
+        // Walk full episode list in order, placing files at their episodeNumber positions
+        const epToItem = new Map<number, IndexedItem>();
+        for (const item of items) {
+          const tm = item.match.tmdbMatch;
+          if (tm?.episodeNumber !== undefined) {
+            epToItem.set(tm.episodeNumber, item);
           }
+        }
 
-          // Walk episode list, placing multi-ep files at their positions
-          // and single-ep files from the custom order
-          let singleIdx = 0;
-          for (const ep of seasonEpisodes) {
-            const multiItem = multiEpByEp.get(ep.episodeNumber);
-            if (multiItem) {
-              rows.push({ type: 'matched', match: multiItem.match, index: multiItem.index, isMultiEp: true, filePos: -1 });
-              continue;
-            }
-            // Skip episodes consumed by multi-ep ranges
-            if (matchedEpNums.has(ep.episodeNumber) && !customOrder.some((idx) => {
-              const m = renameable[idx];
-              return m.tmdbMatch?.episodeNumber === ep.episodeNumber;
-            })) {
-              continue; // Consumed by a multi-ep file
-            }
-            // Place next single-ep file from custom order
-            if (singleIdx < customOrder.length) {
-              const matchIdx = customOrder[singleIdx];
-              const m = renameable[matchIdx];
-              rows.push({ type: 'matched', match: m, index: matchIdx, isMultiEp: false, filePos: singleIdx });
-              singleIdx++;
+        const usedItems = new Set<IndexedItem>();
+        let singlePos = 0;
+        for (const ep of seasonEpisodes) {
+          const matchItem = epToItem.get(ep.episodeNumber);
+          if (matchItem) {
+            const isME = matchItem.isMultiEp;
+            rows.push({ type: 'matched', match: matchItem.match, index: matchItem.index, isMultiEp: isME, filePos: isME ? -1 : singlePos });
+            if (!isME) {
+              singlePos++;
               movableCount++;
-            } else if (!matchedEpNums.has(ep.episodeNumber)) {
-              rows.push({ type: 'missing', episode: ep });
             }
+            usedItems.add(matchItem);
+          } else if (!matchedEpNums.has(ep.episodeNumber)) {
+            rows.push({ type: 'missing', episode: ep });
           }
-        } else {
-          // Default: walk full episode list in order, interleaving matched and missing
-          const epToItem = new Map<number, IndexedItem>();
-          for (const item of items) {
-            const tm = item.match.tmdbMatch;
-            if (tm?.episodeNumber !== undefined) {
-              epToItem.set(tm.episodeNumber, item);
-            }
-          }
-
-          const usedItems = new Set<IndexedItem>();
-          let singlePos = 0;
-          for (const ep of seasonEpisodes) {
-            const matchItem = epToItem.get(ep.episodeNumber);
-            if (matchItem) {
-              const isME = matchItem.isMultiEp;
-              rows.push({ type: 'matched', match: matchItem.match, index: matchItem.index, isMultiEp: isME, filePos: isME ? -1 : singlePos });
-              if (!isME) {
-                singlePos++;
-                movableCount++;
-              }
-              usedItems.add(matchItem);
-            } else if (!matchedEpNums.has(ep.episodeNumber)) {
-              rows.push({ type: 'missing', episode: ep });
-            }
-          }
-          // Append any items not in the episode list (edge case)
-          for (const item of items) {
-            if (!usedItems.has(item)) {
-              rows.push({ type: 'matched', match: item.match, index: item.index, isMultiEp: item.isMultiEp, filePos: item.isMultiEp ? -1 : singlePos++ });
-              if (!item.isMultiEp) movableCount++;
-            }
+        }
+        // Append any items not in the episode list (edge case)
+        for (const item of items) {
+          if (!usedItems.has(item)) {
+            rows.push({ type: 'matched', match: item.match, index: item.index, isMultiEp: item.isMultiEp, filePos: item.isMultiEp ? -1 : singlePos++ });
+            if (!item.isMultiEp) movableCount++;
           }
         }
       } else {
@@ -436,7 +470,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each groupedRenameable as group}
+      {#each groupedRenameable as group, gi}
         <tr class="season-divider">
           <td colspan={hasDvdCompare ? 10 : 9}>
             <span class="season-label">{group.label}</span>
@@ -458,18 +492,18 @@
                 <input type="checkbox" bind:checked={selected[row.index]} />
               </td>
               <td class="col-reorder">
-                {#if !row.isMultiEp && group.movableCount > 1}
+                {#if !row.isMultiEp && (group.movableCount > 1 || groupedRenameable.length > 1 || group.totalCount > group.matchedCount)}
                   <div class="reorder-btns">
                     <button
                       class="reorder-btn"
-                      disabled={row.filePos <= 0}
-                      onclick={() => moveFile(group.label, row.filePos, row.filePos - 1)}
+                      disabled={!findAdjacentTarget(gi, i, 'up')}
+                      onclick={() => handleMoveUp(gi, i, row.index)}
                       title="Move file up"
                     >&#9650;</button>
                     <button
                       class="reorder-btn"
-                      disabled={row.filePos >= group.movableCount - 1}
-                      onclick={() => moveFile(group.label, row.filePos, row.filePos + 1)}
+                      disabled={!findAdjacentTarget(gi, i, 'down')}
+                      onclick={() => handleMoveDown(gi, i, row.index)}
                       title="Move file down"
                     >&#9660;</button>
                   </div>

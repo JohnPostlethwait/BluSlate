@@ -16,6 +16,7 @@ import {
   CONFIDENCE_MATCHED_THRESHOLD,
   TRACK_REVERSAL_THRESHOLD,
   TRACK_REVERSAL_MIN_FORWARD_COST,
+  TRACK_REVERSAL_UNIFORM_CV_THRESHOLD,
 } from '../config/thresholds.js';
 import { logger } from '../utils/logger.js';
 import { MediaType } from '../types/media.js';
@@ -341,7 +342,90 @@ export async function matchSeasonBatch(
     }
   }
 
-  // ── Step 3: Detect and fix reverse track order (global decision) ────
+  // ── Step 3: Demote outlier tracks when files exceed episodes ─────────
+  // When there are more episode-classified files than TMDb episodes,
+  // files with track numbers far from the main contiguous cluster are
+  // likely extras (behind-the-scenes, etc.), not episodes. Detect gaps
+  // in the track number sequence and reclassify outliers as extras.
+  // IMPORTANT: This MUST run before reversal detection (Step 4) because:
+  //   1. Files are in ascending track order here — gap detection needs this.
+  //   2. Outlier tracks pollute the reversal cost/correlation analysis.
+  if (episodeFiles.length > tmdbEpisodes.length) {
+    const excess = episodeFiles.length - tmdbEpisodes.length;
+    const trackNums = episodeFiles.map((f) => extractTrackNumber(f.file.fileName));
+
+    // Find the largest gap(s) in the sorted track sequence
+    interface TrackGap { index: number; gap: number }
+    const gaps: TrackGap[] = [];
+    for (let i = 1; i < trackNums.length; i++) {
+      const gap = trackNums[i] - trackNums[i - 1];
+      if (gap > 1) gaps.push({ index: i, gap });
+    }
+
+    if (gaps.length > 0) {
+      // Sort by gap size descending — largest gaps first
+      gaps.sort((a, b) => b.gap - a.gap);
+
+      // Split the sequence at the largest gap(s). The cluster containing
+      // the most files wins. Files outside the main cluster are extras.
+      // For simplicity, use the single largest gap: files after the gap
+      // or files before the gap — whichever side has fewer files than
+      // the episode count gets demoted.
+      const largestGap = gaps[0];
+      const beforeCount = largestGap.index;
+      const afterCount = episodeFiles.length - largestGap.index;
+
+      let demoteStart: number;
+      let demoteEnd: number;
+
+      if (beforeCount >= tmdbEpisodes.length && afterCount <= excess) {
+        // Keep the before cluster, demote the after cluster
+        demoteStart = largestGap.index;
+        demoteEnd = episodeFiles.length;
+      } else if (afterCount >= tmdbEpisodes.length && beforeCount <= excess) {
+        // Keep the after cluster, demote the before cluster
+        demoteStart = 0;
+        demoteEnd = largestGap.index;
+      } else {
+        // Ambiguous — don't demote
+        demoteStart = -1;
+        demoteEnd = -1;
+      }
+
+      if (demoteStart >= 0) {
+        const demoted = episodeFiles.splice(demoteStart, demoteEnd - demoteStart);
+        reclassifiedExtras.push(...demoted);
+        logger.batch(
+          `Demoted ${demoted.length} outlier track(s) with gap of ${largestGap.gap}: ` +
+          demoted.map((f) => f.file.fileName).join(', '),
+        );
+
+        // Recompute disc episode ranges after removing outliers
+        discEpRanges.clear();
+        const discEpCounts = new Map<number, number>();
+        for (const file of episodeFiles) {
+          const disc = parseDiscFromPath(file.file.filePath) ?? 0;
+          discEpCounts.set(disc, (discEpCounts.get(disc) ?? 0) + 1);
+        }
+        const sortedDiscs = [...discEpCounts.entries()].sort((a, b) => a[0] - b[0]);
+        let epCursor = 0;
+        for (let di = 0; di < sortedDiscs.length; di++) {
+          const [disc, epCount] = sortedDiscs[di];
+          const isLastDisc = di === sortedDiscs.length - 1;
+          const startEp = epCursor;
+          const endEp = isLastDisc
+            ? tmdbEpisodes.length - 1
+            : Math.min(epCursor + epCount - 1, tmdbEpisodes.length - 1);
+          if (startEp < tmdbEpisodes.length) {
+            discEpRanges.set(disc, { startEp, endEp });
+          }
+          epCursor += epCount;
+        }
+      }
+    }
+  }
+
+  // ── Step 4: Detect and fix reverse track order (global decision) ────
   // MakeMKV may extract titles in reverse episode order. Compare forward
   // vs reverse runtime cost across ALL discs using unified refs (preferring
   // DVDCompare seconds when available for sub-minute precision). The
@@ -353,7 +437,7 @@ export async function matchSeasonBatch(
   const assignedFiles = new Set<number>();
   const assignedEps = new Set<number>();
 
-  // ── Step 4: Unified candidate generation & assignment ───────────────
+  // ── Step 5: Unified candidate generation & assignment ───────────────
   // Single cost function using the best available runtime data from the
   // unified ref (DVDCompare sub-second or TMDb minute-level).
 
@@ -490,14 +574,15 @@ export async function matchSeasonBatch(
   }
 
   // ── Greedy assignment: pick lowest-cost pairing, assign, repeat ─────
-  // Tiebreaker: when costs are very close (within 0.01 min), prefer the
+  // Tiebreaker: when costs are close (within 1.0 min), prefer the
   // candidate with smaller positional difference. This ensures that when
-  // runtimes are similar (common for episodes of the same show), the
-  // detected track order is respected rather than jumbling by tiny
-  // DVDCompare runtime deltas.
+  // runtimes are similar (sitcoms, procedurals with uniform episode
+  // lengths), the detected track order is respected rather than being
+  // scrambled by small runtime deltas. Physical media stores episodes
+  // sequentially, so positional order is a strong signal.
   candidates.sort((a, b) => {
     const costDiff = a.cost - b.cost;
-    if (Math.abs(costDiff) > 0.01) return costDiff;
+    if (Math.abs(costDiff) > 1.0) return costDiff;
     return a.positionalDiff - b.positionalDiff;
   });
 
@@ -1198,6 +1283,35 @@ export function detectAndApplyTrackOrder(
 
   if (discRuns.length === 0) return trackOrderHint ?? 'forward';
 
+  // ── Uniform runtime guard ──────────────────────────────────────────
+  // When episode runtimes have very low variance (sitcoms, procedurals
+  // where all episodes are ~22min or ~46min), runtime-based cost
+  // differences are noise, not signal. Compute the coefficient of
+  // variation (CV = stddev/mean) of the reference episode runtimes.
+  // When CV is below the threshold, default to forward track order
+  // unless a hint says otherwise — reversal requires DVDCompare
+  // correlation data or a cross-season hint.
+  const refRuntimes: number[] = [];
+  for (const ref of unifiedRefs) {
+    const rt = ref.dvdCompareRuntimeSeconds !== undefined
+      ? ref.dvdCompareRuntimeSeconds / 60
+      : ref.tmdbRuntimeMinutes;
+    if (rt !== null && rt !== undefined) refRuntimes.push(rt);
+  }
+
+  let runtimesAreUniform = false;
+  if (refRuntimes.length >= 2) {
+    const mean = refRuntimes.reduce((a, b) => a + b, 0) / refRuntimes.length;
+    if (mean > 0) {
+      const variance = refRuntimes.reduce((sum, r) => sum + (r - mean) ** 2, 0) / refRuntimes.length;
+      const cv = Math.sqrt(variance) / mean;
+      runtimesAreUniform = cv < TRACK_REVERSAL_UNIFORM_CV_THRESHOLD;
+      if (runtimesAreUniform) {
+        logger.batch(`Episode runtimes are uniform (CV=${cv.toFixed(3)}, threshold=${TRACK_REVERSAL_UNIFORM_CV_THRESHOLD}) — forward bias active`);
+      }
+    }
+  }
+
   // Sum forward and reverse cost GLOBALLY across all discs.
   // Use disc episode ranges to pick the correct unified ref for each slot.
   let totalForwardCost = 0;
@@ -1375,6 +1489,22 @@ export function detectAndApplyTrackOrder(
       totalForwardCost > TRACK_REVERSAL_MIN_FORWARD_COST;
     shouldReverse = reverseStronglyBetter;
     detectionMethod = 'hint';
+  } else if (runtimesAreUniform) {
+    // No hint, uniform runtimes — runtime cost differences are noise.
+    // Only reverse if DVDCompare correlation provides strong evidence.
+    if (hasCorrelationData) {
+      const maxCorr = Math.max(totalForwardCorr, totalReverseCorr);
+      if (maxCorr > 10 && totalReverseCorr > totalForwardCorr * 1.5) {
+        shouldReverse = true;
+        detectionMethod = 'correlation (uniform runtimes)';
+      } else {
+        shouldReverse = false;
+        detectionMethod = 'default (uniform runtimes, weak correlation)';
+      }
+    } else {
+      shouldReverse = false;
+      detectionMethod = 'default (uniform runtimes, no correlation data)';
+    }
   } else if (hasValidDisc &&
     totalReverseCost < totalForwardCost * TRACK_REVERSAL_THRESHOLD &&
     totalForwardCost > TRACK_REVERSAL_MIN_FORWARD_COST) {

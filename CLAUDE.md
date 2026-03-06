@@ -88,6 +88,28 @@ The pipeline (`core/pipeline.ts`) accepts a `UIAdapter` and is completely UI-agn
    - `matchSeasonBatch()` — Sequential greedy matcher: walks files and TMDb episodes in order, assigns by runtime proximity, handles multi-episode files, reclassifies poor matches as extras
    - `matchSpecialsBatch()` — Second pass: unmatched files + extras matched against Season 0 (Specials) by best-fit runtime with dual threshold (absolute ≤15min AND relative ≤20%)
 
+### Batch Matcher Rules (IMPORTANT)
+
+These rules are critical invariants. Violating them causes incorrect matches and misclassified files.
+
+1. **Sequential track order is the default.** Blu-ray/DVD discs virtually always store episodes in sequential track order (t00→E1, t01→E2, ...). The matcher MUST preserve this order unless there is strong evidence of reversal.
+
+2. **Never reverse tracks based on runtime alone when runtimes are uniform.** Shows like sitcoms (Seinfeld ~22min) and procedurals (TNG ~46min without DVDCompare) have nearly identical episode runtimes. The coefficient of variation (CV) guard in `detectAndApplyTrackOrder` prevents reversal when CV < 0.10. Only DVDCompare correlation with strong signal (>1.5x) or a cross-season hint can override this.
+
+3. **Positional order dominates when runtime costs are close.** The greedy matcher sort uses a 1.0-minute tiebreaker: when two candidates' costs differ by ≤1.0 min, the one with smaller positional difference wins. This prevents tiny runtime deltas from scrambling sequential order. Do NOT reduce this threshold below 1.0 min.
+
+4. **Never reclassify mid-sequence tracks as extras.** If tracks t00-t04 all have episode-length runtimes, they should all match to episodes. A mid-sequence track (e.g., t03) being pushed to extras/specials is a critical bug indicating the sort or reversal logic is wrong.
+
+5. **Track reversal is a global per-release decision.** A physical disc release is mastered one way (all forward or all reverse). `detectAndApplyTrackOrder` applies the same decision to all discs. Per-disc reversal is NOT supported — it's one direction for the whole release.
+
+6. **Three reversal signals in priority order:**
+   - Cross-season hint (from previously matched season on same release)
+   - Absolute cost difference (when runtimes vary enough: CV ≥ 0.10)
+   - DVDCompare correlation (sub-second runtime pattern matching)
+   When none provide strong evidence, default to forward.
+
+7. **Outlier tracks with large track-number gaps are demoted before reversal detection AND matching.** When more episode-classified files exist than TMDb episodes, the matcher looks for gaps in track numbers (e.g., t00-t04 then t10). Files on the far side of the largest gap are reclassified as extras. This MUST run before reversal detection (Step 4) because: (a) gap detection requires ascending track order which reversal destroys, and (b) outlier tracks pollute the reversal cost/correlation analysis.
+
 ### Confidence Scoring
 
 Two scoring systems in `core/scorer.ts`:

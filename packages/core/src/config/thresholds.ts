@@ -45,6 +45,14 @@ export const TRACK_REVERSAL_THRESHOLD = 0.75;
 /** Minimum forward cost before considering reversal (avoids flipping near-zero cost discs) */
 export const TRACK_REVERSAL_MIN_FORWARD_COST = 2;
 
+/**
+ * Maximum coefficient of variation (stddev/mean) of episode runtimes below
+ * which runtimes are considered "uniform" (e.g., sitcoms where all episodes
+ * are ~22min). When uniform, track reversal requires dramatically stronger
+ * evidence because runtime differences are noise, not signal.
+ */
+export const TRACK_REVERSAL_UNIFORM_CV_THRESHOLD = 0.10;
+
 // ── Specials matching ────────────────────────────────────────────────
 
 /** Maximum absolute runtime difference (minutes) for specials match */

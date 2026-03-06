@@ -872,6 +872,140 @@ describe('matchSeasonBatch', () => {
   });
 });
 
+describe('matchSeasonBatch with uniform runtimes (sitcoms)', () => {
+  it('should match sequentially by track order when all episodes have similar runtimes', async () => {
+    // Seinfeld Season 1: 5 episodes, all ~22 min. Without runtime differentiation,
+    // the matcher must rely on sequential track order (t00→E1, t01→E2, ...).
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, {
+      id: 1, _id: '1', air_date: '1989-07-05', name: 'Season 1',
+      overview: '', poster_path: null, season_number: 1,
+      vote_average: 0,
+      episodes: [
+        { ...makeTmdbEpisode(1, 'The Seinfeld Chronicles', 23), season_number: 1 },
+        { ...makeTmdbEpisode(2, 'The Stakeout', 22), season_number: 1 },
+        { ...makeTmdbEpisode(3, 'The Robbery', 23), season_number: 1 },
+        { ...makeTmdbEpisode(4, 'Male Unbonding', 22), season_number: 1 },
+        { ...makeTmdbEpisode(5, 'The Stock Tip', 23), season_number: 1 },
+      ],
+    });
+    const client = makeSeasonMockClient(seasonMap);
+
+    // Files with slightly varying runtimes — all within ~1.5 min of each other
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 23.5),   // t00 → should be E1
+      makeEpisodeFile(1, 1, 22.3),   // t01 → should be E2
+      makeEpisodeFile(1, 2, 23.1),   // t02 → should be E3
+      makeEpisodeFile(1, 3, 22.7),   // t03 → should be E4
+      makeEpisodeFile(1, 4, 23.4),   // t04 → should be E5
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2009, 1, files);
+
+    // ALL 5 files should be matched (none reclassified as extras)
+    expect(result.matched).toHaveLength(5);
+    expect(result.reclassifiedExtras).toHaveLength(0);
+
+    // Episodes must be assigned sequentially by track order
+    const assignments = result.matched
+      .sort((a, b) => {
+        const aTrack = a.mediaFile.fileName.match(/t(\d+)/)?.[1] ?? '0';
+        const bTrack = b.mediaFile.fileName.match(/t(\d+)/)?.[1] ?? '0';
+        return parseInt(aTrack, 10) - parseInt(bTrack, 10);
+      })
+      .map(m => m.tmdbMatch?.episodeNumber);
+
+    expect(assignments).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('should not reclassify mid-sequence tracks as extras with uniform runtimes', async () => {
+    // Regression test: t03 should NOT be reclassified as an extra/special
+    // when all tracks have similar runtimes
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, {
+      id: 1, _id: '1', air_date: '1989-07-05', name: 'Season 1',
+      overview: '', poster_path: null, season_number: 1,
+      vote_average: 0,
+      episodes: [
+        { ...makeTmdbEpisode(1, 'Episode 1', 22), season_number: 1 },
+        { ...makeTmdbEpisode(2, 'Episode 2', 22), season_number: 1 },
+        { ...makeTmdbEpisode(3, 'Episode 3', 22), season_number: 1 },
+        { ...makeTmdbEpisode(4, 'Episode 4', 22), season_number: 1 },
+        { ...makeTmdbEpisode(5, 'Episode 5', 22), season_number: 1 },
+      ],
+    });
+    const client = makeSeasonMockClient(seasonMap);
+
+    // All identical runtimes — worst case for disambiguation
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 22.4),
+      makeEpisodeFile(1, 1, 22.1),
+      makeEpisodeFile(1, 2, 22.3),
+      makeEpisodeFile(1, 3, 22.2),   // This track must NOT become an extra
+      makeEpisodeFile(1, 4, 22.5),
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2009, 1, files);
+
+    expect(result.matched).toHaveLength(5);
+    expect(result.reclassifiedExtras).toHaveLength(0);
+
+    // Verify t03 is matched to E4 (sequential order)
+    const t03Match = result.matched.find(m => m.mediaFile.fileName.includes('t03'));
+    expect(t03Match).toBeDefined();
+    expect(t03Match?.tmdbMatch?.episodeNumber).toBe(4);
+  });
+
+  it('should demote outlier tracks with large track number gaps as extras', async () => {
+    // Seinfeld S1 real scenario: tracks t00-t04 are episodes, t10 is an extra.
+    // The gap of 6 between t04 and t10 should cause t10 to be reclassified
+    // as an extra, not matched to an episode.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, {
+      id: 1, _id: '1', air_date: '1989-07-05', name: 'Season 1',
+      overview: '', poster_path: null, season_number: 1,
+      vote_average: 0,
+      episodes: [
+        { ...makeTmdbEpisode(1, 'The Seinfeld Chronicles', 23), season_number: 1 },
+        { ...makeTmdbEpisode(2, 'The Stakeout', 22), season_number: 1 },
+        { ...makeTmdbEpisode(3, 'The Robbery', 23), season_number: 1 },
+        { ...makeTmdbEpisode(4, 'Male Unbonding', 22), season_number: 1 },
+        { ...makeTmdbEpisode(5, 'The Stock Tip', 23), season_number: 1 },
+      ],
+    });
+    const client = makeSeasonMockClient(seasonMap);
+
+    // 6 files: t00-t04 are the 5 episodes, t10 is a bonus feature
+    // All have similar runtimes (~22min)
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 23.5),
+      makeEpisodeFile(1, 1, 22.3),
+      makeEpisodeFile(1, 2, 23.1),
+      makeEpisodeFile(1, 3, 22.7),
+      makeEpisodeFile(1, 4, 23.4),
+      makeEpisodeFile(1, 10, 22.0),  // Outlier — gap of 6 from t04
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2009, 1, files);
+
+    // 5 episodes matched, t10 reclassified as extra
+    expect(result.matched).toHaveLength(5);
+    expect(result.reclassifiedExtras).toHaveLength(1);
+    expect(result.reclassifiedExtras[0].file.fileName).toContain('t10');
+
+    // Episodes assigned sequentially: t00→E1, t01→E2, ..., t04→E5
+    const assignments = result.matched
+      .sort((a, b) => {
+        const aTrack = a.mediaFile.fileName.match(/t(\d+)/)?.[1] ?? '0';
+        const bTrack = b.mediaFile.fileName.match(/t(\d+)/)?.[1] ?? '0';
+        return parseInt(aTrack, 10) - parseInt(bTrack, 10);
+      })
+      .map(m => m.tmdbMatch?.episodeNumber);
+
+    expect(assignments).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
 describe('matchSeasonBatch with DVDCompare data', () => {
   it('should use DVDCompare sub-second matching for definitive episode identification', async () => {
     // Simulates TNG S1 D1: all episodes are ~45.5 min (identical to TMDb's perspective)
@@ -2556,6 +2690,38 @@ describe('detectAndApplyTrackOrder', () => {
     expect(newOrder[2]).toBe(originalOrder[2]); // t10 stays middle
     expect(newOrder[3]).toBe(originalOrder[1]); // t09
     expect(newOrder[4]).toBe(originalOrder[0]); // t08 now last
+  });
+
+  it('should not reverse tracks when episode runtimes are uniform (sitcoms)', () => {
+    // Seinfeld-like scenario: all episodes ~22min, no DVDCompare data.
+    // With uniform runtimes, forward/reverse costs are nearly identical,
+    // so the system must default to forward (natural track order).
+    const tmdbEpisodes: TmdbEpisode[] = [
+      { ...makeTmdbEpisode(1, 'The Seinfeld Chronicles', 23), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'The Stakeout', 22), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'The Robbery', 23), season_number: 1 },
+      { ...makeTmdbEpisode(4, 'Male Unbonding', 22), season_number: 1 },
+      { ...makeTmdbEpisode(5, 'The Stock Tip', 23), season_number: 1 },
+    ];
+
+    // Files with similar runtimes — small variations that could trick
+    // cost-based reversal if not guarded
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 23.5),
+      makeEpisodeFile(1, 1, 22.3),
+      makeEpisodeFile(1, 2, 23.1),
+      makeEpisodeFile(1, 3, 22.7),
+      makeEpisodeFile(1, 4, 23.4),
+    ];
+
+    const originalOrder = files.map(f => f.file.fileName);
+    const { refs, ranges } = buildTestRefsAndRanges(tmdbEpisodes, files);
+    const decision = detectAndApplyTrackOrder(files, refs, ranges);
+    const newOrder = files.map(f => f.file.fileName);
+
+    // Must stay forward — uniform runtimes should never trigger reversal
+    expect(decision).toBe('forward');
+    expect(newOrder).toEqual(originalOrder);
   });
 
   it('should handle single-file discs without reversal', () => {
