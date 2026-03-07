@@ -132,14 +132,26 @@ docker compose up -d
 > [!TIP]
 > See [`docker-compose.example.yml`](docker-compose.example.yml) for a fully commented configuration template. To pin to a specific version, replace `latest` with a version tag (e.g., `ghcr.io/johnpostlethwait/bluslate:0.2.2`). To build from source instead, replace `image:` with `build: .` and clone the repo.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `TMDB_API_KEY` | Yes | — | TMDb Read Access Token |
-| `BLUSLATE_LANGUAGE` | No | `en-US` | BCP 47 language code for TMDb metadata |
-| `BLUSLATE_TEMPLATE` | No | `{show_name} - S{season}E{episode} - {episode_title}` | Default naming template |
-| `BLUSLATE_MIN_CONFIDENCE` | No | `85` | Minimum confidence threshold (0–100) — matches at or above are pre-approved for review |
-| `BLUSLATE_PASSWORD` | No | — | Enable password auth (see security note below) |
-| `PORT` | No | `3000` | Port the server listens on inside the container |
+| Variable | Required | Default (Docker) | Default (local) | Description |
+|----------|----------|-----------------|-----------------|-------------|
+| `TMDB_API_KEY` | Yes | — | — | TMDb Read Access Token |
+| `MEDIA_ROOT` | Yes | `/media` | `/media` | Root directory exposed to the file browser. Mount your media here. |
+| `BLUSLATE_DATA` | No | `/data` | `~/.local/share/bluslate` | Directory for persistent data (settings, recent directories). |
+| `BLUSLATE_LANGUAGE` | No | `en-US` | `en-US` | BCP 47 language code for TMDb metadata |
+| `BLUSLATE_TEMPLATE` | No | `{show_name} - S{season}E{episode} - {episode_title}` | same | Default naming template |
+| `BLUSLATE_MIN_CONFIDENCE` | No | `85` | `85` | Minimum confidence threshold (0–100) — matches at or above are pre-approved for review |
+| `BLUSLATE_PASSWORD` | No | — | — | Enable password auth (see security note below) |
+| `PORT` | No | `3000` | `3000` | Port the server listens on |
+
+#### Running Locally
+
+```bash
+TMDB_API_KEY=your-key-here \
+MEDIA_ROOT=/path/to/your/media \
+pnpm --filter @bluslate/web run dev
+```
+
+`BLUSLATE_DATA` defaults to `~/.local/share/bluslate` when not set, so settings persist automatically without extra configuration.
 
 > [!WARNING]
 > **The web server has no authentication by default.** Anyone who can reach port 3000 can rename your media files and read your TMDb API key. Never expose BluSlate directly to the internet without protection.

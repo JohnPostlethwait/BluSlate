@@ -6,6 +6,7 @@
  */
 
 import { join } from 'node:path';
+import os from 'node:os';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { VALID_LANGUAGE_RE, MAX_TEMPLATE_LENGTH } from '@bluslate/core';
 
@@ -24,7 +25,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 function getDataDir(): string {
-  return process.env.BLUSLATE_DATA || '/data';
+  if (process.env.BLUSLATE_DATA) return process.env.BLUSLATE_DATA;
+  // Docker default is /data; outside Docker fall back to a user-writable XDG path
+  return join(os.homedir(), '.local', 'share', 'bluslate');
 }
 
 function getSettingsPath(): string {
