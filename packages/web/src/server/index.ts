@@ -68,6 +68,9 @@ async function main(): Promise<void> {
         frameAncestors: ["'none'"],
       },
     },
+    // HSTS must be disabled — BluSlate is HTTP-only; sending HSTS causes browsers to
+    // upgrade subsequent asset requests to HTTPS, breaking the page (ERR_SSL_PROTOCOL_ERROR)
+    hsts: false,
     // COOP is only meaningful over HTTPS — suppress browser warning on HTTP deployments
     crossOriginOpenerPolicy: false,
     // Socket.IO responses bypass helmet, causing Origin-Agent-Cluster inconsistency warnings
