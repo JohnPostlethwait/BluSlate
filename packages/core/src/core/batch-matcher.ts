@@ -325,10 +325,16 @@ export async function matchSeasonBatch(
       const isLastDisc = di === sortedDiscs.length - 1;
       const startEp = epCursor;
       // Last disc extends to cover all remaining episodes (handles multi-ep
-      // files that consume more TMDb episodes than there are files)
+      // files that consume more TMDb episodes than there are files).
+      // Non-last discs get a 2× buffer (epCount * 2) so that multi-episode
+      // files don't strand later files on the same disc without candidates.
+      // Example: 3 files on Disc 1, one is a multi-ep → consumes 2 slots,
+      // leaving 2 files competing for 1 slot without the buffer.
+      // Overlap between adjacent disc ranges is intentional; the positional
+      // cost function prevents disc 1 files from stealing disc 2 episodes.
       const endEp = isLastDisc
         ? tmdbEpisodes.length - 1
-        : Math.min(epCursor + epCount - 1, tmdbEpisodes.length - 1);
+        : Math.min(epCursor + epCount * 2 - 1, tmdbEpisodes.length - 1);
       if (startEp < tmdbEpisodes.length) {
         discEpRanges.set(disc, { startEp, endEp });
       }
@@ -416,9 +422,10 @@ export async function matchSeasonBatch(
           const [disc, epCount] = sortedDiscs[di];
           const isLastDisc = di === sortedDiscs.length - 1;
           const startEp = epCursor;
+          // Same 2× buffer as the initial range computation above.
           const endEp = isLastDisc
             ? tmdbEpisodes.length - 1
-            : Math.min(epCursor + epCount - 1, tmdbEpisodes.length - 1);
+            : Math.min(epCursor + epCount * 2 - 1, tmdbEpisodes.length - 1);
           if (startEp < tmdbEpisodes.length) {
             discEpRanges.set(disc, { startEp, endEp });
           }

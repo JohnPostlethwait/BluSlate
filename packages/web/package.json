@@ -1,6 +1,6 @@
 {
   "name": "@bluslate/web",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Web server for BluSlate — run in Docker as a browser-accessible app",
   "type": "module",
   "scripts": {
