@@ -1,6 +1,6 @@
 {
   "name": "bluslate",
-  "version": "0.2.11",
+  "version": "0.3.0",
   "private": true,
   "description": "Cross-platform tool to rename TV show files using TMDb metadata",
   "type": "module",

@@ -141,6 +141,7 @@
   }
 
   function parseSeasonNumber(label: string): number {
+    if (label === 'Specials') return 0;
     const m = label.match(/Season\s+(\d+)/);
     return m ? parseInt(m[1], 10) : -1;
   }
@@ -475,7 +476,7 @@
     for (let i = 0; i < renameable.length; i++) {
       const m = renameable[i];
       const tm = m.tmdbMatch;
-      const label = tm?.seasonNumber !== undefined ? `Season ${tm.seasonNumber}` : 'Other';
+      const label = tm?.seasonNumber === 0 ? 'Specials' : tm?.seasonNumber !== undefined ? `Season ${tm.seasonNumber}` : 'Other';
       if (!itemsByLabel.has(label)) {
         itemsByLabel.set(label, []);
         groupOrder.push(label);
@@ -562,6 +563,15 @@
 
       groups.push({ label, rows, matchedCount, totalCount, movableCount });
     }
+
+    // Specials (Season 0) always appears after all numbered seasons
+    groups.sort((a, b) => {
+      const aNum = parseSeasonNumber(a.label);
+      const bNum = parseSeasonNumber(b.label);
+      if (aNum === 0 && bNum !== 0) return 1;
+      if (bNum === 0 && aNum !== 0) return -1;
+      return aNum - bNum;
+    });
 
     return groups;
   });
