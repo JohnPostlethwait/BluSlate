@@ -8,6 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 * Succinctly answer direct questions
 * Do not take action on direct questions until prompted to do so
 
+## Background Tasks
+
+* Only run commands in the background (`run_in_background`) when they are genuinely long-lived (e.g. a dev server that must stay running)
+* Short-lived commands — git operations, builds, tests, one-off scripts — MUST run in the foreground so output is captured immediately
+
 ## Build & Development Commands
 
 This project requires Node.js 22 via nvm. Shell state resets between commands, so always bootstrap nvm first:
@@ -46,6 +51,12 @@ pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run package:gui
 # Install GUI to /Applications (must kill running instances, remove old app, and clear xattr to avoid macOS caching stale bundles)
 pkill -f BluSlate 2>/dev/null; sleep 1; rm -rf /Applications/BluSlate.app && cp -R /Users/johnpostlethwait/Documents/workspace/BluSlate/packages/gui/release/mac-arm64/BluSlate.app /Applications/BluSlate.app && /usr/bin/xattr -cr /Applications/BluSlate.app
 
+# Launch web server in dev mode (builds core first, then starts Fastify with file watching)
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/core run build && pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/web run dev
+
+# Build web package for production/Docker
+pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/core run build && pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/web run build
+
 # Git commands (cwd resets, so use -C)
 git -C /Users/johnpostlethwait/Documents/workspace/BluSlate status
 
@@ -59,11 +70,12 @@ git push origin v0.x.x
 
 ### Monorepo Structure (pnpm workspaces)
 
-Three packages under `packages/`:
+Four packages under `packages/`:
 
 - **`@bluslate/core`** — Pure business logic, zero UI dependencies. Built with tsup to ESM. All matching, scoring, parsing, TMDb API, and pipeline orchestration lives here.
 - **`@bluslate/cli`** — CLI frontend using Commander.js, ora (spinners), @inquirer/prompts, chalk. Implements `UIAdapter` for terminal interaction.
 - **`@bluslate/gui`** — Electron desktop app using electron-vite + Svelte 5 (runes). Implements `UIAdapter` via IPC bridge.
+- **`@bluslate/web`** — Self-hosted web server using Fastify + Socket.IO + Svelte 5. Implements `UIAdapter` via WebSocket bridge. Deployable via Docker.
 
 ### UIAdapter Pattern (Core Architectural Concept)
 
@@ -73,7 +85,7 @@ The core package defines a `UIAdapter` interface (`packages/core/src/types/ui-ad
 - `UserPrompter` — user confirmations (confirmRenames, confirmShowIdentification)
 - `DisplayAdapter` — results display (displayResults, displaySummary)
 
-The pipeline (`core/pipeline.ts`) accepts a `UIAdapter` and is completely UI-agnostic. Both the CLI (`cli/src/ui/cli-adapter.ts`) and GUI (`gui/src/main/gui-adapter.ts`) implement this interface. The GUI adapter bridges to the renderer via Electron IPC using request/response patterns for prompts.
+The pipeline (`core/pipeline.ts`) accepts a `UIAdapter` and is completely UI-agnostic. The CLI (`cli/src/ui/cli-adapter.ts`), GUI (`gui/src/main/gui-adapter.ts`), and Web (`web/src/server/web-adapter.ts`) each implement this interface. The GUI adapter bridges via Electron IPC; the Web adapter bridges via Socket.IO request/response patterns.
 
 ### Two Matching Pipelines
 
