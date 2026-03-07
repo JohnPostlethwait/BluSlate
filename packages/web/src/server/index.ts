@@ -57,6 +57,10 @@ async function main(): Promise<void> {
   // Security headers
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: {
+      // useDefaults: false prevents Helmet merging its own defaults (which include
+      // upgrade-insecure-requests) into our directives. That directive tells browsers
+      // to silently upgrade HTTP asset requests to HTTPS, breaking HTTP-only deployments.
+      useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
