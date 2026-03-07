@@ -223,16 +223,20 @@
   }
 
   function handleReset() {
-    // If we're leaving a prompt view, send an empty response so the main-process
-    // pipeline Promise resolves and releases the pipelineRunning guard.
-    // Also ignore subsequent pipeline events until the pipeline finishes.
-    if (currentView === 'confirm') {
-      window.api.respondConfirmRenames([]);
+    // Cancel the pipeline so any pending ipcMain.once prompt listeners are
+    // removed and their Promises reject (PipelineCancelledError), releasing
+    // the pipelineRunning guard in the main process. Also send explicit
+    // responses for views where the prompt IPC may already be registered.
+    if (currentView === 'confirm' || currentView === 'results') {
+      window.api.cancelPipeline();
+      if (currentView === 'confirm') window.api.respondConfirmRenames([]);
       ignoreEvents = true;
     } else if (currentView === 'showSelect') {
+      window.api.cancelPipeline();
       window.api.respondConfirmShow(null);
       ignoreEvents = true;
     } else if (currentView === 'dvdCompareSelect') {
+      window.api.cancelPipeline();
       window.api.respondConfirmDvdCompare([]);
       ignoreEvents = true;
     }

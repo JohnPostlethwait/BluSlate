@@ -97,6 +97,14 @@
 
   let selectedCount = $derived(selected.filter(Boolean).length);
 
+  // Track original matches-array indices for skipped files (needed for within-skipped reorder)
+  let skippedMatchIndices = $derived(
+    matches.reduce<number[]>((acc, m, i) => {
+      if (m.status === 'unmatched') acc.push(i);
+      return acc;
+    }, [])
+  );
+
   interface MissingEpisode {
     episodeNumber: number;
     episodeName: string;
@@ -250,11 +258,16 @@
    * Find the adjacent movable target row (up or down), skipping multi-ep rows.
    * Returns { type: 'matched', index } or { type: 'missing', episode } or null.
    */
+  type AdjacentTarget =
+    | { type: 'matched'; index: number; groupLabel: string }
+    | { type: 'missing'; episode: MissingEpisode; groupLabel: string }
+    | { type: 'skipped'; index: number };
+
   function findAdjacentTarget(
     groupIndex: number,
     rowIndex: number,
     direction: 'up' | 'down',
-  ): { type: 'matched'; index: number; groupLabel: string } | { type: 'missing'; episode: MissingEpisode; groupLabel: string } | null {
+  ): AdjacentTarget | null {
     const group = groupedRenameable[groupIndex];
     const step = direction === 'up' ? -1 : 1;
 
@@ -267,7 +280,11 @@
 
     // Cross to adjacent group
     const nextGi = groupIndex + step;
-    if (nextGi < 0 || nextGi >= groupedRenameable.length) return null;
+    if (nextGi < 0 || nextGi >= groupedRenameable.length) {
+      // Boundary: moving down past the last group can cross into skipped
+      if (direction === 'down' && skipped.length > 0) return { type: 'skipped', index: 0 };
+      return null;
+    }
     const nextGroup = groupedRenameable[nextGi];
     const startRow = direction === 'up' ? nextGroup.rows.length - 1 : 0;
     const endRow = direction === 'up' ? -1 : nextGroup.rows.length;
@@ -278,6 +295,8 @@
       if (row.type === 'matched' && !row.isMultiEp) return { type: 'matched', index: row.index, groupLabel: nextGroup.label };
     }
 
+    // If the adjacent group had no movable rows and we're going down, try skipped
+    if (direction === 'down' && skipped.length > 0) return { type: 'skipped', index: 0 };
     return null;
   }
 
@@ -296,9 +315,150 @@
     if (!target) return;
     if (target.type === 'matched') {
       await swapEpisodes(fileIdx, target.index);
-    } else {
+    } else if (target.type === 'missing') {
       await moveToMissing(fileIdx, target.episode, target.groupLabel);
+    } else if (target.type === 'skipped') {
+      await swapRenameableAndSkipped(fileIdx, target.index);
     }
+  }
+
+  /** Swap two skipped files' positions in the matches array (within-skipped reorder) */
+  function swapMatchPositions(skippedIdxA: number, skippedIdxB: number) {
+    const matchIdxA = skippedMatchIndices[skippedIdxA];
+    const matchIdxB = skippedMatchIndices[skippedIdxB];
+    const temp = matches[matchIdxA];
+    matches[matchIdxA] = matches[matchIdxB];
+    matches[matchIdxB] = temp;
+    reorderVersion++;
+  }
+
+  /** Snapshot a skipped file's original assignment (undefined:undefined) for reorder tracking */
+  function snapshotSkippedOriginal(sk: MatchResultData) {
+    const key = sk.mediaFile.filePath;
+    if (originalAssignment.has(key)) return;
+    originalAssignment.set(key, `${sk.tmdbMatch?.seasonNumber}:${sk.tmdbMatch?.episodeNumber}`);
+    originalAssignment = new Map(originalAssignment);
+  }
+
+  /** Swap a renameable file's episode assignment with a skipped file (cross-boundary) */
+  async function swapRenameableAndSkipped(renameableIdx: number, skippedIdx: number) {
+    const ep = renameable[renameableIdx];
+    const sk = skipped[skippedIdx];
+    if (!ep.tmdbMatch) return;
+
+    snapshotOriginal(renameableIdx);
+    snapshotSkippedOriginal(sk);
+
+    const epTmdb = { ...ep.tmdbMatch };
+    const epStatus = ep.status;
+
+    // Promote skipped file: give it the episode assignment
+    sk.tmdbMatch = epTmdb;
+    sk.status = epStatus;
+    if (sk.parsed.episodeNumbers && epTmdb.episodeNumber !== undefined) {
+      sk.parsed.episodeNumbers = [epTmdb.episodeNumber];
+    }
+
+    // Demote renameable file
+    ep.tmdbMatch = undefined;
+    ep.status = 'unmatched';
+
+    userMoved.add(sk.mediaFile.filePath);
+    userMoved = new Set(userMoved);
+
+    try {
+      const newFilenames = await window.api.regenerateFilenames([
+        { tmdbMatch: { ...sk.tmdbMatch } as Record<string, unknown>, extension: sk.mediaFile.extension },
+      ]);
+      sk.newFilename = newFilenames[0];
+    } catch {
+      // Filename regeneration failed — episode data already updated
+    }
+
+    reorderVersion++;
+  }
+
+  /** Promote a skipped file into a missing episode slot */
+  async function promoteSkippedToMissing(skippedIdx: number, episode: MissingEpisode, targetSeasonLabel: string) {
+    const sk = skipped[skippedIdx];
+    snapshotSkippedOriginal(sk);
+    const targetSeason = parseSeasonNumber(targetSeasonLabel);
+    const targetGroup = groupedRenameable.find((g) => g.label === targetSeasonLabel);
+    const refRow = targetGroup?.rows.find((r): r is RenameableRow & { type: 'matched' } => r.type === 'matched');
+    if (!refRow?.match.tmdbMatch) return;
+
+    const ref = refRow.match.tmdbMatch;
+    sk.tmdbMatch = {
+      id: ref.id,
+      name: ref.name,
+      year: ref.year,
+      mediaType: ref.mediaType,
+      seasonNumber: targetSeason >= 0 ? targetSeason : ref.seasonNumber,
+      episodeNumber: episode.episodeNumber,
+      episodeTitle: episode.episodeName,
+      runtime: episode.runtime ?? undefined,
+      seasonEpisodes: ref.seasonEpisodes,
+      seasonEpisodeCount: ref.seasonEpisodeCount,
+    };
+    sk.status = refRow.match.status;
+    if (sk.parsed.episodeNumbers) {
+      sk.parsed.episodeNumbers = [episode.episodeNumber];
+    }
+
+    userMoved.add(sk.mediaFile.filePath);
+    userMoved = new Set(userMoved);
+
+    try {
+      const newFilenames = await window.api.regenerateFilenames([
+        { tmdbMatch: { ...sk.tmdbMatch } as Record<string, unknown>, extension: sk.mediaFile.extension },
+      ]);
+      sk.newFilename = newFilenames[0];
+    } catch {
+      // Filename regeneration failed — episode data already updated
+    }
+
+    reorderVersion++;
+  }
+
+  /** Find the adjacent target for a skipped file (up crosses into episode groups; down stays in skipped) */
+  function findSkippedAdjacentTarget(skippedIdx: number, direction: 'up' | 'down'): AdjacentTarget | null {
+    if (direction === 'down') {
+      if (skippedIdx < skipped.length - 1) return { type: 'skipped', index: skippedIdx + 1 };
+      return null;
+    }
+
+    // direction === 'up': first try to stay within skipped
+    if (skippedIdx > 0) return { type: 'skipped', index: skippedIdx - 1 };
+
+    // skippedIdx === 0: look at the bottom of the episode groups
+    for (let gi = groupedRenameable.length - 1; gi >= 0; gi--) {
+      const group = groupedRenameable[gi];
+      for (let ri = group.rows.length - 1; ri >= 0; ri--) {
+        const row = group.rows[ri];
+        if (row.type === 'missing') return { type: 'missing', episode: row.episode, groupLabel: group.label };
+        if (row.type === 'matched' && !row.isMultiEp) return { type: 'matched', index: row.index, groupLabel: group.label };
+      }
+    }
+
+    return null;
+  }
+
+  async function handleSkippedMoveUp(skippedIdx: number) {
+    const target = findSkippedAdjacentTarget(skippedIdx, 'up');
+    if (!target) return;
+    if (target.type === 'skipped') {
+      swapMatchPositions(skippedIdx, target.index);
+    } else if (target.type === 'matched') {
+      await swapRenameableAndSkipped(target.index, skippedIdx);
+    } else if (target.type === 'missing') {
+      await promoteSkippedToMissing(skippedIdx, target.episode, target.groupLabel);
+    }
+  }
+
+  async function handleSkippedMoveDown(skippedIdx: number) {
+    const target = findSkippedAdjacentTarget(skippedIdx, 'down');
+    if (!target) return;
+    if (target.type === 'skipped') swapMatchPositions(skippedIdx, target.index);
   }
 
   let hasDvdCompare = $derived(renameable.some((m) => m.dvdCompareUsed));
@@ -564,6 +724,7 @@
     <table class="skipped-table">
       <thead>
         <tr>
+          <th class="col-reorder"></th>
           <th class="col-num">#</th>
           <th>File</th>
           <th class="col-fixed">Size</th>
@@ -574,6 +735,22 @@
       <tbody>
         {#each skipped as match, i}
           <tr>
+            <td class="col-reorder">
+              <div class="reorder-btns">
+                <button
+                  class="reorder-btn"
+                  disabled={!findSkippedAdjacentTarget(i, 'up')}
+                  onclick={() => handleSkippedMoveUp(i)}
+                  title="Move file up"
+                >&#9650;</button>
+                <button
+                  class="reorder-btn"
+                  disabled={!findSkippedAdjacentTarget(i, 'down')}
+                  onclick={() => handleSkippedMoveDown(i)}
+                  title="Move file down"
+                >&#9660;</button>
+              </div>
+            </td>
             <td class="col-num">{i + 1}</td>
             <td class="col-wrap">{relativePath(match.mediaFile.filePath)}</td>
             <td class="col-fixed col-dim">{formatSize(match.mediaFile.sizeBytes)}</td>

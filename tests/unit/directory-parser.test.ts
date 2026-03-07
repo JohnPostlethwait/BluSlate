@@ -514,6 +514,91 @@ describe('parseDirectoryContext', () => {
     expect(context!.isExtras).toBeUndefined();
     expect(context!.season).toBe(1);
   });
+
+  // ── Word-form ordinal season names with parenthesized disc (Mr. Robot style) ──
+
+  it('should extract season/disc from "Mr. Robot- Season One (Disc 1)"', () => {
+    const file = {
+      filePath: '/media/shows/Mr. Robot/Mr. Robot- Season One (Disc 1)/title_t01.mkv',
+      fileName: 'title_t01.mkv',
+      extension: '.mkv',
+      sizeBytes: 8_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Mr. Robot');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(1);
+    expect(context!.disc).toBe(1);
+  });
+
+  it('should extract season/disc from "Mr. Robot- Season Two (Disc 1)"', () => {
+    const file = {
+      filePath: '/media/shows/Mr. Robot/Mr. Robot- Season Two (Disc 1)/title_t02.mkv',
+      fileName: 'title_t02.mkv',
+      extension: '.mkv',
+      sizeBytes: 12_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Mr. Robot');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(2);
+    expect(context!.disc).toBe(1);
+  });
+
+  it('should extract season/disc from "Mr. Robot- Season Three (Disc 2)"', () => {
+    const file = {
+      filePath: '/media/shows/Mr. Robot/Mr. Robot- Season Three (Disc 2)/title_t01.mkv',
+      fileName: 'title_t01.mkv',
+      extension: '.mkv',
+      sizeBytes: 10_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Mr. Robot');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(3);
+    expect(context!.disc).toBe(2);
+  });
+
+  it('should extract season/disc from "Mr. Robot- Season Four (Disc 4)"', () => {
+    const file = {
+      filePath: '/media/shows/Mr. Robot/Mr. Robot- Season Four (Disc 4)/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 12_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/Mr. Robot');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(4);
+    expect(context!.disc).toBe(4);
+  });
+
+  it('should handle bare word-form ordinal "Season Two" without parentheses', () => {
+    const file = {
+      filePath: '/media/shows/SomeShow/SomeShow Season Two/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 4_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/SomeShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(2);
+  });
+
+  it('should handle word-form ordinal with parenthesized disc "Season Five (Disc 3)"', () => {
+    const file = {
+      filePath: '/media/shows/SomeShow/SomeShow Season Five (Disc 3)/title_t00.mkv',
+      fileName: 'title_t00.mkv',
+      extension: '.mkv',
+      sizeBytes: 4_000_000_000,
+    };
+    const context = parseDirectoryContext(file.filePath, '/media/shows/SomeShow');
+
+    expect(context).not.toBeNull();
+    expect(context!.season).toBe(5);
+    expect(context!.disc).toBe(3);
+  });
 });
 
 describe('groupFilesBySeason', () => {
@@ -751,6 +836,58 @@ describe('groupFilesBySeason', () => {
     expect(groups.size).toBe(1);
     expect(groups.has('MyShow::1')).toBe(true);
     expect(groups.get('MyShow::1')!.files).toHaveLength(2);
+  });
+
+  // ── Word-form ordinal multi-season grouping (Mr. Robot style) ───────────
+
+  it('should group Mr. Robot word-ordinal directories into separate season groups', () => {
+    const files = [
+      {
+        filePath: '/media/shows/Mr. Robot/Mr. Robot- Season One (Disc 1)/title_t01.mkv',
+        fileName: 'title_t01.mkv',
+        extension: '.mkv',
+        sizeBytes: 8_000_000_000,
+      },
+      {
+        filePath: '/media/shows/Mr. Robot/Mr. Robot- Season One (Disc 2)/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 8_000_000_000,
+      },
+      {
+        filePath: '/media/shows/Mr. Robot/Mr. Robot- Season Two (Disc 1)/title_t02.mkv',
+        fileName: 'title_t02.mkv',
+        extension: '.mkv',
+        sizeBytes: 12_000_000_000,
+      },
+      {
+        filePath: '/media/shows/Mr. Robot/Mr. Robot- Season Three (Disc 2)/title_t01.mkv',
+        fileName: 'title_t01.mkv',
+        extension: '.mkv',
+        sizeBytes: 10_000_000_000,
+      },
+      {
+        filePath: '/media/shows/Mr. Robot/Mr. Robot- Season Four (Disc 4)/title_t00.mkv',
+        fileName: 'title_t00.mkv',
+        extension: '.mkv',
+        sizeBytes: 12_000_000_000,
+      },
+    ];
+    const groups = groupFilesBySeason(files, '/media/shows/Mr. Robot');
+
+    // Must produce 4 separate season groups — NOT one giant season 1 group
+    expect(groups.size).toBe(4);
+    expect(groups.has('Mr. Robot::1')).toBe(true);
+    expect(groups.has('Mr. Robot::2')).toBe(true);
+    expect(groups.has('Mr. Robot::3')).toBe(true);
+    expect(groups.has('Mr. Robot::4')).toBe(true);
+
+    // Season 1 gets the 2 Disc 1 and Disc 2 files
+    expect(groups.get('Mr. Robot::1')!.files).toHaveLength(2);
+    // Each other season gets exactly 1 file
+    expect(groups.get('Mr. Robot::2')!.files).toHaveLength(1);
+    expect(groups.get('Mr. Robot::3')!.files).toHaveLength(1);
+    expect(groups.get('Mr. Robot::4')!.files).toHaveLength(1);
   });
 
   it('should prefer directory context season over filename season', () => {

@@ -1572,8 +1572,8 @@ function parseDiscFromPath(filePath: string): number | undefined {
     const match = segment.match(/S\d{1,2}D(\d{1,2})/i);
     if (match) return parseInt(match[1], 10);
 
-    // Look for "Disc N" or "Disk N" patterns
-    const discMatch = segment.match(/(?:Disc|Disk|D)\s*(\d{1,2})/i);
+    // Look for "Disc N", "Disk N", or "D4" patterns (word boundaries prevent false matches like "District9")
+    const discMatch = segment.match(/\b(?:Disc|Disk|D)\s*(\d{1,2})\b/i);
     if (discMatch) return parseInt(discMatch[1], 10);
   }
   return undefined;

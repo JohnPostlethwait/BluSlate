@@ -4,6 +4,13 @@ import { logger } from '../utils/logger.js';
 import { stripExtension } from '../utils/string.js';
 import type { MediaFile, DirectoryContext, SeasonGroup } from '../types/media.js';
 
+// Word-form ordinal → season number (e.g. "Season Two" → 2)
+const ORDINAL_MAP: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12,
+};
+
 // Patterns to extract season/disc info from directory names
 const SEASON_DISC_PATTERNS: Array<{
   regex: RegExp;
@@ -54,6 +61,17 @@ const SEASON_DISC_PATTERNS: Array<{
   },
 
   // ── Permissive patterns (match anywhere in segment with flexible separators) ──
+
+  // "Mr. Robot- Season Two (Disc 1)", "SomeShow Season Five (Disc 3)"
+  {
+    regex: /Season\s+(One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)\s*\(\s*(?:Disc|Disk)\s*(\d{1,2})\s*\)/i,
+    extract: (m) => ({ season: ORDINAL_MAP[m[1].toLowerCase()], disc: parseInt(m[2], 10) }),
+  },
+  // "SomeShow Season Two", "Mr. Robot- Season One"
+  {
+    regex: /Season\s+(One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?=[\s_\-(]|$)/i,
+    extract: (m) => ({ season: ORDINAL_MAP[m[1].toLowerCase()] }),
+  },
 
   // "Star Trek Season 5 Disc 1", "MODERN_FAMILY_SEASON1_DISC1"
   {

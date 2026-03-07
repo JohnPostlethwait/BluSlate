@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
 import { PipelineCancelledError, filterAutoAccepted } from '@bluslate/core';
 import type { UIAdapter, MatchResult, TmdbTvResult, TmdbClient, DvdCompareSearchResult, ShowIdentificationResult } from '@bluslate/core';
 
@@ -18,10 +18,18 @@ export interface CancellableGuiAdapter extends UIAdapter {
  */
 export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapter {
   let cancelled = false;
+  const cancelCallbacks: Set<() => void> = new Set();
+
+  function registerCancel(cb: () => void): () => void {
+    cancelCallbacks.add(cb);
+    return () => cancelCallbacks.delete(cb);
+  }
 
   return {
     cancel(): void {
       cancelled = true;
+      for (const cb of cancelCallbacks) cb();
+      cancelCallbacks.clear();
     },
 
     progress: {
@@ -56,14 +64,21 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
         if (autoAccept) {
           return Promise.resolve(filterAutoAccepted(matches, minConfidence));
         }
+        if (cancelled) return Promise.reject(new PipelineCancelledError());
 
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
+          const listener = (_event: IpcMainEvent, { confirmed }: { confirmed: MatchResult[] }) => {
+            unregister();
+            resolve(confirmed);
+          };
           // Send ALL matches so the ConfirmDialog can display both renameable
           // files (with checkboxes) and skipped files (unmatched only).
           // The dialog handles filtering internally.
+          ipcMain.once('prompt:confirmRenames:response', listener);
           mainWindow.webContents.send('prompt:confirmRenames', { matches });
-          ipcMain.once('prompt:confirmRenames:response', (_event, { confirmed }) => {
-            resolve(confirmed);
+          const unregister = registerCancel(() => {
+            ipcMain.removeListener('prompt:confirmRenames:response', listener);
+            reject(new PipelineCancelledError());
           });
         });
       },
@@ -72,13 +87,21 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
         directoryShowName: string,
         candidates: TmdbTvResult[],
       ): Promise<ShowIdentificationResult> {
-        return new Promise((resolve) => {
+        if (cancelled) return Promise.reject(new PipelineCancelledError());
+
+        return new Promise((resolve, reject) => {
+          const listener = (_event: IpcMainEvent, { selected }: { selected: ShowIdentificationResult }) => {
+            unregister();
+            resolve(selected);
+          };
+          ipcMain.once('prompt:confirmShow:response', listener);
           mainWindow.webContents.send('prompt:confirmShow', {
             showName: directoryShowName,
             candidates,
           });
-          ipcMain.once('prompt:confirmShow:response', (_event, { selected }) => {
-            resolve(selected);
+          const unregister = registerCancel(() => {
+            ipcMain.removeListener('prompt:confirmShow:response', listener);
+            reject(new PipelineCancelledError());
           });
         });
       },
@@ -87,13 +110,21 @@ export function createGuiAdapter(mainWindow: BrowserWindow): CancellableGuiAdapt
         showName: string,
         candidates: DvdCompareSearchResult[],
       ): Promise<DvdCompareSearchResult[]> {
-        return new Promise((resolve) => {
+        if (cancelled) return Promise.reject(new PipelineCancelledError());
+
+        return new Promise((resolve, reject) => {
+          const listener = (_event: IpcMainEvent, { selected }: { selected: DvdCompareSearchResult[] }) => {
+            unregister();
+            resolve(selected ?? []);
+          };
+          ipcMain.once('prompt:confirmDvdCompare:response', listener);
           mainWindow.webContents.send('prompt:confirmDvdCompare', {
             showName,
             candidates,
           });
-          ipcMain.once('prompt:confirmDvdCompare:response', (_event, { selected }) => {
-            resolve(selected ?? []);
+          const unregister = registerCancel(() => {
+            ipcMain.removeListener('prompt:confirmDvdCompare:response', listener);
+            reject(new PipelineCancelledError());
           });
         });
       },

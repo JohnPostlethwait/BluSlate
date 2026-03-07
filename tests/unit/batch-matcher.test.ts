@@ -2910,3 +2910,188 @@ describe('identifyShow', () => {
     expect(prompts.confirmShowIdentification).toHaveBeenCalledWith('nonexistent', []);
   });
 });
+
+// ── Physical disc invariants ──────────────────────────────────────────────────
+
+describe('Physical disc invariants', () => {
+  // Invariant 1: A disc contains only episodes from one season.
+  // Excess files beyond TMDb episode count become extras, never assigned to another season.
+  it('Invariant 1: excess episode-length files are reclassified as extras, not matched to another season', async () => {
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Episode 1', 45), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Episode 2', 44), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'Episode 3', 46), season_number: 1 },
+      { ...makeTmdbEpisode(4, 'Episode 4', 45), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // 6 episode-length files but only 4 TMDb episodes in this season
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 45),
+      makeEpisodeFile(1, 1, 44),
+      makeEpisodeFile(1, 2, 46),
+      makeEpisodeFile(1, 3, 45),
+      makeEpisodeFile(1, 4, 44), // excess — no TMDb slot
+      makeEpisodeFile(1, 5, 45), // excess — no TMDb slot
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2020, 1, files);
+
+    // Exactly 4 matched (one per TMDb episode), 2 reclassified as extras
+    expect(result.matched).toHaveLength(4);
+    expect(result.reclassifiedExtras).toHaveLength(2);
+
+    // All matched files reference season 1 — excess files are never assigned to another season
+    for (const m of result.matched) {
+      expect(m.tmdbMatch?.seasonNumber).toBe(1);
+    }
+  });
+
+  // Invariant 2: Season assignment from directory name only — DVDCompare does not override it.
+  // DVDCompare data is used only to amend runtime precision, never to re-route files to a different season.
+  it('Invariant 2: DVDCompare data does not change which season files are matched to', async () => {
+    // Simulate Season 4 of a show. matchSeasonBatch is called with season=4.
+    // DVDCompare disc data is present but must not alter the season assignment.
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(4, makeSeasonDetails(4, [
+      { ...makeTmdbEpisode(1, 'Season 4 Ep 1', 45), season_number: 4 },
+      { ...makeTmdbEpisode(2, 'Season 4 Ep 2', 44), season_number: 4 },
+      { ...makeTmdbEpisode(3, 'Season 4 Ep 3', 46), season_number: 4 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // DVDCompare data with episode runtime info — only amends precision, must not override season
+    const dvdCompareDiscs = [
+      {
+        discNumber: 1,
+        discLabel: 'DISC ONE',
+        episodes: [
+          { title: 'Season 4 Ep 1', runtimeSeconds: 2700, runtimeFormatted: '45:00' },
+          { title: 'Season 4 Ep 2', runtimeSeconds: 2640, runtimeFormatted: '44:00' },
+          { title: 'Season 4 Ep 3', runtimeSeconds: 2760, runtimeFormatted: '46:00' },
+        ],
+      },
+    ];
+
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 45),
+      makeEpisodeFile(1, 1, 44),
+      makeEpisodeFile(1, 2, 46),
+    ];
+
+    const result = await matchSeasonBatch(
+      client, 99999, 'TestShow', 2022, 4, files, undefined, dvdCompareDiscs,
+    );
+
+    expect(result.matched).toHaveLength(3);
+    // All matched files must reference season 4 — DVDCompare cannot alter this
+    for (const m of result.matched) {
+      expect(m.tmdbMatch?.seasonNumber).toBe(4);
+    }
+  });
+
+  // Invariant 3: Episodes on a disc fill a contiguous episode window.
+  // Disc 1 covers episodes 1–N, Disc 2 covers N+1 through N+M, etc. No cross-disc bleeding.
+  it('Invariant 3: each disc is matched to a contiguous episode window with no cross-disc bleeding', async () => {
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Episode 1', 45), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Episode 2', 44), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'Episode 3', 43), season_number: 1 },
+      { ...makeTmdbEpisode(4, 'Episode 4', 45), season_number: 1 },
+      { ...makeTmdbEpisode(5, 'Episode 5', 46), season_number: 1 },
+      { ...makeTmdbEpisode(6, 'Episode 6', 44), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // 3 files on disc 1, 3 files on disc 2
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 45),
+      makeEpisodeFile(1, 1, 44),
+      makeEpisodeFile(1, 2, 43),
+      makeEpisodeFile(2, 0, 45),
+      makeEpisodeFile(2, 1, 46),
+      makeEpisodeFile(2, 2, 44),
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2020, 1, files);
+
+    expect(result.matched).toHaveLength(6);
+
+    // Disc 1 files must map only to episodes 1–3
+    const disc1Eps = result.matched
+      .filter(m => m.mediaFile.filePath.includes('S1D1'))
+      .map(m => m.tmdbMatch?.episodeNumber ?? -1)
+      .sort((a, b) => a - b);
+    expect(disc1Eps).toEqual([1, 2, 3]);
+
+    // Disc 2 files must map only to episodes 4–6
+    const disc2Eps = result.matched
+      .filter(m => m.mediaFile.filePath.includes('S1D2'))
+      .map(m => m.tmdbMatch?.episodeNumber ?? -1)
+      .sort((a, b) => a - b);
+    expect(disc2Eps).toEqual([4, 5, 6]);
+  });
+
+  // Invariant 4: Full season coverage — no episode number gaps across discs.
+  // All episodes 1–N are matched; the discs collectively cover every episode contiguously.
+  it('Invariant 4: all season episodes are matched with no number gaps across discs', async () => {
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Episode 1', 45), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Episode 2', 46), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'Episode 3', 44), season_number: 1 },
+      { ...makeTmdbEpisode(4, 'Episode 4', 45), season_number: 1 },
+      { ...makeTmdbEpisode(5, 'Episode 5', 46), season_number: 1 },
+      { ...makeTmdbEpisode(6, 'Episode 6', 44), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // 2 files per disc across 3 discs — season coverage must be complete and gapless
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 45),
+      makeEpisodeFile(1, 1, 46),
+      makeEpisodeFile(2, 0, 44),
+      makeEpisodeFile(2, 1, 45),
+      makeEpisodeFile(3, 0, 46),
+      makeEpisodeFile(3, 1, 44),
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2020, 1, files);
+
+    expect(result.matched).toHaveLength(6);
+
+    // Episodes 1–6 must all be present with no gaps
+    const episodeNumbers = result.matched
+      .map(m => m.tmdbMatch?.episodeNumber ?? -1)
+      .sort((a, b) => a - b);
+    expect(episodeNumbers).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  // Invariant 5: Never skip files — prefer a lower-confidence match over no match.
+  // All episode-classified files must be matched when TMDb episode slots remain.
+  it('Invariant 5: no episode-classified file is skipped when TMDb slots remain', async () => {
+    const seasonMap = new Map<number, TmdbSeasonDetails>();
+    seasonMap.set(1, makeSeasonDetails(1, [
+      { ...makeTmdbEpisode(1, 'Episode 1', 45), season_number: 1 },
+      { ...makeTmdbEpisode(2, 'Episode 2', 45), season_number: 1 },
+      { ...makeTmdbEpisode(3, 'Episode 3', 45), season_number: 1 },
+    ]));
+    const client = makeSeasonMockClient(seasonMap);
+
+    // One file has a noticeably different runtime (5-min shorter than expected).
+    // It must still be matched — lower confidence is acceptable, skipping is not.
+    const files: ClassifiedFile[] = [
+      makeEpisodeFile(1, 0, 45),
+      makeEpisodeFile(1, 1, 40), // 5-min shorter — must still match, not be skipped
+      makeEpisodeFile(1, 2, 45),
+    ];
+
+    const result = await matchSeasonBatch(client, 12345, 'TestShow', 2020, 1, files);
+
+    // All 3 files must be matched — no skipping when TMDb slots remain
+    expect(result.matched).toHaveLength(3);
+    expect(result.reclassifiedExtras).toHaveLength(0);
+  });
+});
