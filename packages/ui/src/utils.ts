@@ -26,7 +26,9 @@ export function formatDuration(probeData?: { durationSeconds?: number }): string
 
 export function formatTmdbRuntime(runtime?: number | null): string {
   if (runtime == null) return '--';
-  return `${runtime} min`;
+  const h = Math.floor(runtime / 60);
+  const m = runtime % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 export function formatDvdCompareRuntime(match: MatchResultData): string {
