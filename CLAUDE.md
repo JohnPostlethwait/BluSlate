@@ -51,6 +51,10 @@ pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run package:gui
 # Install GUI to /Applications (must kill running instances, remove old app, and clear xattr to avoid macOS caching stale bundles)
 pkill -f BluSlate 2>/dev/null; sleep 1; rm -rf /Applications/BluSlate.app && cp -R /Users/johnpostlethwait/Documents/workspace/BluSlate/packages/gui/release/mac-arm64/BluSlate.app /Applications/BluSlate.app && /usr/bin/xattr -cr /Applications/BluSlate.app
 
+# Build, install, and launch GUI locally for testing (single command — run in foreground)
+# This packages the app, installs to /Applications, and opens it. Run ALL of this as one chained command.
+source ~/.nvm/nvm.sh && nvm use 22 && pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate run package:gui && pkill -f BluSlate 2>/dev/null; sleep 1; rm -rf /Applications/BluSlate.app && cp -R /Users/johnpostlethwait/Documents/workspace/BluSlate/packages/gui/release/mac-arm64/BluSlate.app /Applications/BluSlate.app && /usr/bin/xattr -cr /Applications/BluSlate.app && open /Applications/BluSlate.app
+
 # Launch web server in dev mode (builds core first, then starts Fastify with file watching)
 pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/core run build && pnpm --dir /Users/johnpostlethwait/Documents/workspace/BluSlate --filter @bluslate/web run dev
 
