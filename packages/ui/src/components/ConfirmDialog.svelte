@@ -163,6 +163,9 @@
       runtime: fileA.tmdbMatch.runtime,
       seasonNumber: fileA.tmdbMatch.seasonNumber,
       seasonEpisodes: fileA.tmdbMatch.seasonEpisodes,
+      dvdCompareRuntimeSeconds: fileA.dvdCompareRuntimeSeconds,
+      dvdCompareUsed: fileA.dvdCompareUsed,
+      dvdCompareTitle: fileA.dvdCompareTitle,
     };
     const epB = {
       episodeNumber: fileB.tmdbMatch.episodeNumber,
@@ -170,6 +173,9 @@
       runtime: fileB.tmdbMatch.runtime,
       seasonNumber: fileB.tmdbMatch.seasonNumber,
       seasonEpisodes: fileB.tmdbMatch.seasonEpisodes,
+      dvdCompareRuntimeSeconds: fileB.dvdCompareRuntimeSeconds,
+      dvdCompareUsed: fileB.dvdCompareUsed,
+      dvdCompareTitle: fileB.dvdCompareTitle,
     };
 
     // Swap episode assignments
@@ -190,6 +196,14 @@
     if (fileB.parsed.episodeNumbers) {
       fileB.parsed.episodeNumbers = [epA.episodeNumber];
     }
+
+    // Swap DVDCompare fields so they stay with the episode slot, not the file
+    fileA.dvdCompareRuntimeSeconds = epB.dvdCompareRuntimeSeconds;
+    fileA.dvdCompareUsed = epB.dvdCompareUsed;
+    fileA.dvdCompareTitle = epB.dvdCompareTitle;
+    fileB.dvdCompareRuntimeSeconds = epA.dvdCompareRuntimeSeconds;
+    fileB.dvdCompareUsed = epA.dvdCompareUsed;
+    fileB.dvdCompareTitle = epA.dvdCompareTitle;
 
     // Track which file the user explicitly moved (fileA is the one the user clicked)
     userMoved.add(fileA.mediaFile.filePath);
@@ -238,6 +252,11 @@
     if (file.parsed.episodeNumbers) {
       file.parsed.episodeNumbers = [episode.episodeNumber];
     }
+
+    // Missing episode slots have no DVDCompare data
+    file.dvdCompareRuntimeSeconds = undefined;
+    file.dvdCompareUsed = undefined;
+    file.dvdCompareTitle = undefined;
 
     userMoved.add(file.mediaFile.filePath);
     userMoved = new Set(userMoved);
@@ -352,10 +371,16 @@
 
     const epTmdb = { ...ep.tmdbMatch };
     const epStatus = ep.status;
+    const epDvdRuntimeSeconds = ep.dvdCompareRuntimeSeconds;
+    const epDvdUsed = ep.dvdCompareUsed;
+    const epDvdTitle = ep.dvdCompareTitle;
 
-    // Promote skipped file: give it the episode assignment
+    // Promote skipped file: give it the episode assignment and DVDCompare data
     sk.tmdbMatch = epTmdb;
     sk.status = epStatus;
+    sk.dvdCompareRuntimeSeconds = epDvdRuntimeSeconds;
+    sk.dvdCompareUsed = epDvdUsed;
+    sk.dvdCompareTitle = epDvdTitle;
     if (sk.parsed.episodeNumbers && epTmdb.episodeNumber !== undefined) {
       sk.parsed.episodeNumbers = [epTmdb.episodeNumber];
     }
@@ -363,6 +388,9 @@
     // Demote renameable file
     ep.tmdbMatch = undefined;
     ep.status = 'unmatched';
+    ep.dvdCompareRuntimeSeconds = undefined;
+    ep.dvdCompareUsed = undefined;
+    ep.dvdCompareTitle = undefined;
 
     userMoved.add(sk.mediaFile.filePath);
     userMoved = new Set(userMoved);
