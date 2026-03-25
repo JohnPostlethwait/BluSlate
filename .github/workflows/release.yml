@@ -20,6 +20,9 @@ permissions:
   contents: write   # Required for creating releases and uploading assets
   packages: write   # Required for pushing Docker images to ghcr.io
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ── Run tests first (fast, single platform) ──────────────────────────
   test:
