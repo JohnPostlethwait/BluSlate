@@ -16,6 +16,7 @@ export function createProgram(): Command {
     .name('bluslate')
     .description('Rename TV show files using TMDb metadata')
     .version(version)
+    .addHelpText('before', `BluSlate v${version}\n`)
     .argument('<directory>', 'Directory containing media files to rename')
     .option('-n, --dry-run', 'Preview changes without renaming', false)
     .option('-k, --api-key <key>', 'TMDb API Read Access Token')

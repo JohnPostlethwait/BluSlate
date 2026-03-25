@@ -223,6 +223,9 @@ app.whenReady().then(async () => {
 
   // --- IPC Handlers ---
 
+  // App version
+  ipcMain.handle('app:getVersion', () => app.getVersion());
+
   // ffprobe availability check (cached at startup)
   ipcMain.handle('ffprobe:check', () => ffprobeReady);
 

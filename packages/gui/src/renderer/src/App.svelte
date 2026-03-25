@@ -30,6 +30,8 @@
   let minConfidence = $state<number>(85);
   let template = $state<string | undefined>(undefined);
 
+  let appVersion = $state<string>('');
+
   // When true, ignore all pipeline IPC events (user cancelled mid-pipeline)
   let ignoreEvents = $state(false);
 
@@ -74,6 +76,8 @@
     } catch {
       // Settings not available yet, that's OK
     }
+
+    appVersion = await api.getVersion().catch(() => '');
 
     cleanups.push(
       api.onProgress((event, data) => {
@@ -290,6 +294,10 @@
   {:else if currentView === 'summary' && summaryData}
     <SummaryPanel {...summaryData} {matches} {scanDirectory} onreset={handleReset} />
   {/if}
+
+  {#if appVersion}
+    <footer class="app-footer">v{appVersion}</footer>
+  {/if}
 </main>
 
 <style>
@@ -315,6 +323,13 @@
   header {
     text-align: center;
     margin-bottom: 32px;
+  }
+
+  .app-footer {
+    text-align: center;
+    margin-top: 32px;
+    font-size: 11px;
+    color: #555;
   }
 
   header h1 {

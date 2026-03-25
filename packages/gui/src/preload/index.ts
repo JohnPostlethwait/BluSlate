@@ -138,6 +138,9 @@ const api = {
   undoRenames: (directory: string): Promise<{ restored: number; failed: number }> =>
     ipcRenderer.invoke('undo:execute', directory),
 
+  // App version
+  getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+
   // ffprobe availability
   checkFfprobe: (): Promise<boolean> => ipcRenderer.invoke('ffprobe:check'),
 
