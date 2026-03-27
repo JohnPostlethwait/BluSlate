@@ -18,7 +18,7 @@ export {
 export type { IdentifiedShow } from './core/batch-matcher.js';
 
 // Scoring
-export { computeConfidence, computeBatchConfidence, computeBatchConfidenceBreakdown } from './core/scorer.js';
+export { computeBatchConfidence, computeBatchConfidenceBreakdown } from './core/scorer.js';
 export type { BatchConfidenceBreakdown } from './core/scorer.js';
 
 // Scanner & Prober

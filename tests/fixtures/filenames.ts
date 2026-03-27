@@ -142,14 +142,13 @@ export const fallbackCases: FilenameTestCase[] = [
 /**
  * Disc-rip specific cases — filenames produced by ripping software (MakeMKV,
  * HandBrake, DVDFab, etc.) that contain embedded metadata or recognisable
- * patterns. These are NOT the generic "title_t00.mkv" filenames handled by
- * batch mode; rather, these are cases where the disc or ripping tool produced
- * a filename with useful metadata that the per-file parser should extract.
+ * patterns. These tests verify that `parseFilename()` correctly extracts
+ * season/episode data when present (used as a fallback in directory-parser
+ * when no season can be inferred from the directory name).
  */
 export const discRipTvCases: FilenameTestCase[] = [
   // ── MakeMKV: disc name encodes show + season/disc ─────────────────────
   // When a disc has embedded metadata, MakeMKV uses it in the filename.
-  // These are still handled per-file in some mixed-mode scenarios.
 
   // S01E02 from a named MakeMKV rip with quality tag
   {
@@ -218,9 +217,9 @@ export const discRipTvCases: FilenameTestCase[] = [
 ];
 
 /**
- * Generic disc rip filenames — these have NO useful metadata for the per-file
- * parser. They should all parse as Unknown and be handled by batch mode.
- * The purpose of these tests is to ensure the parser does NOT misidentify them.
+ * Generic disc rip filenames — these have NO useful metadata for `parseFilename()`.
+ * They all parse as Unknown. The purpose of these tests is to ensure the parser
+ * does NOT misidentify them (e.g. extracting a false season/episode number).
  */
 export const genericDiscCases: FilenameTestCase[] = [
   // MakeMKV default (no disc metadata)

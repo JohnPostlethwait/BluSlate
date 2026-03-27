@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { levenshteinDistance, normalizedSimilarity, computeConfidence, computeBatchConfidenceBreakdown } from '../../packages/core/src/core/scorer.js';
-import { MediaType } from '../../packages/core/src/types/media.js';
-import type { ParsedFilename, TmdbMatchedItem, ProbeResult } from '../../packages/core/src/types/media.js';
+import { levenshteinDistance, normalizedSimilarity, computeBatchConfidenceBreakdown } from '../../packages/core/src/core/scorer.js';
 
 describe('levenshteinDistance', () => {
   it('should return 0 for identical strings', () => {
@@ -39,88 +37,6 @@ describe('normalizedSimilarity', () => {
 
   it('should handle empty strings', () => {
     expect(normalizedSimilarity('', '')).toBe(1.0);
-  });
-});
-
-describe('computeConfidence', () => {
-  const baseParsedTV: ParsedFilename = {
-    mediaType: MediaType.TV,
-    title: 'Breaking Bad',
-    season: 1,
-    episodeNumbers: [2],
-  };
-
-  const baseTmdbTV: TmdbMatchedItem = {
-    id: 1396,
-    name: 'Breaking Bad',
-    year: 2008,
-    runtime: 48,
-    mediaType: MediaType.TV,
-    seasonNumber: 1,
-    episodeNumber: 2,
-    episodeTitle: "Cat's in the Bag...",
-    searchRank: 0,
-  };
-
-  it('should return high confidence for perfect match', () => {
-    const confidence = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    // title(30) + no-year redistribution(10) + ep match(15) + runtime ≤3min(20) + search rank 0(5) = 80
-    expect(confidence).toBe(80);
-  });
-
-  it('should return lower confidence for title mismatch', () => {
-    const parsed: ParsedFilename = { ...baseParsedTV, title: 'Breaking Bread' };
-    const confidence = computeConfidence(parsed, undefined, baseTmdbTV, 48);
-    expect(confidence).toBeLessThan(80);
-  });
-
-  it('should boost confidence with matching runtime', () => {
-    const withRuntime = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    const withoutRuntime = computeConfidence(baseParsedTV, undefined, baseTmdbTV, undefined);
-    expect(withRuntime).toBeGreaterThan(withoutRuntime);
-  });
-
-  it('should reduce confidence for wrong season/episode', () => {
-    const tmdbWrongEp: TmdbMatchedItem = {
-      ...baseTmdbTV,
-      seasonNumber: 2,
-      episodeNumber: 5,
-    };
-    const confidence = computeConfidence(baseParsedTV, undefined, tmdbWrongEp, 48);
-    const correctConfidence = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    expect(confidence).toBeLessThan(correctConfidence);
-  });
-
-  it('should factor in probe data agreement', () => {
-    const probeData: ProbeResult = {
-      title: 'Breaking Bad',
-      durationMinutes: 48,
-    };
-    const withProbe = computeConfidence(baseParsedTV, probeData, baseTmdbTV, 48);
-    const withoutProbe = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    // Matching probe title adds exactly 10 points (1.0 similarity × 10)
-    expect(withProbe).toBe(90);
-    expect(withoutProbe).toBe(80);
-    expect(withProbe).toBeGreaterThan(withoutProbe);
-  });
-
-  it('should add zero probe points when probe title does not match', () => {
-    const probeData: ProbeResult = {
-      title: 'Completely Different Show',
-      durationMinutes: 48,
-    };
-    const withMismatchedProbe = computeConfidence(baseParsedTV, probeData, baseTmdbTV, 48);
-    const withoutProbe = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    // Probe title similarity is low so it adds fewer points than perfect match
-    expect(withMismatchedProbe).toBeLessThan(90);
-    // But still >= base since even low similarity adds some points
-    expect(withMismatchedProbe).toBeGreaterThanOrEqual(withoutProbe);
-  });
-
-  it('should always return a value between 0 and 100', () => {
-    const confidence = computeConfidence(baseParsedTV, undefined, baseTmdbTV, 48);
-    expect(confidence).toBeGreaterThanOrEqual(0);
-    expect(confidence).toBeLessThanOrEqual(100);
   });
 });
 

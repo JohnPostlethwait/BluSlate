@@ -100,18 +100,21 @@ The core pipeline (`core/pipeline.ts`) accepts a `UIAdapter` interface and is co
 - **`UserPrompter`** — user confirmations (confirmRenames, confirmShowIdentification)
 - **`DisplayAdapter`** — results display (displayResults, displaySummary)
 
-### Two Matching Pipelines
+### Matching Pipeline
 
-`runPipeline()` selects between:
+`runPipeline()` always runs a single batch pipeline (`runBatchPipeline`). All inputs go through the same 7-phase flow regardless of filename structure:
 
-1. **Per-file pipeline** — For informative filenames (e.g. `Show.Name.S01E03.mkv`). Parses filename → probes with ffprobe → searches TMDb → matches individually.
-
-2. **Batch pipeline** — Activated when >70% of files have generic filenames (MakeMKV disc rips). Groups files by directory/season, identifies the show via TMDb, then matches by runtime and sequential position. A second pass matches unmatched files against Season 0 (Specials).
+1. **Group by season** — `groupFilesBySeason()` parses directory names to extract show, season, and disc.
+2. **Identify shows** — `identifyShow()` searches TMDb; user confirms each unique show.
+3. **DVDCompare lookup** — Searches DVDCompare for sub-second disc runtime data; user selects release.
+4. **Probe files** — ffprobe on all files in parallel (concurrency 8). Gracefully skips on failure.
+5. **Classify + match** — `classifyAndSortFiles()` then `matchSeasonBatch()` per season group, processed in season order so track-order detection from earlier seasons propagates forward.
+6. **Match specials** — `matchSpecialsBatch()` matches leftover files against Season 0 (dual threshold: ≤15min AND ≤20%).
+7. **Play All warnings** — Files whose runtime or size greatly exceeds the group median are flagged.
 
 ### Confidence Scoring
 
-- **Per-file:** Title similarity (Levenshtein), year, season/episode match, runtime, probe metadata, search rank. Max 100.
-- **Batch:** Sequential position (+40) + runtime match (0–60) − multi-episode penalty (−15) − relative runtime penalty (−5/−10).
+Batch scoring only (`core/scorer.ts`): sequential position (+40) + runtime match (0–60) − multi-episode penalty (−15) − relative runtime penalty (−5/−10). `computeBatchConfidenceBreakdown()` returns itemized `ConfidenceBreakdownItem[]` for display in the UI.
 
 ### GUI (Electron + Svelte 5)
 

@@ -91,18 +91,17 @@ The core package defines a `UIAdapter` interface (`packages/core/src/types/ui-ad
 
 The pipeline (`core/pipeline.ts`) accepts a `UIAdapter` and is completely UI-agnostic. The CLI (`cli/src/ui/cli-adapter.ts`), GUI (`gui/src/main/gui-adapter.ts`), and Web (`web/src/server/web-adapter.ts`) each implement this interface. The GUI adapter bridges via Electron IPC; the Web adapter bridges via Socket.IO request/response patterns.
 
-### Two Matching Pipelines
+### Matching Pipeline
 
-`runPipeline()` in `core/pipeline.ts` selects between:
+`runPipeline()` in `core/pipeline.ts` always runs a single batch pipeline — there is no per-file fallback. All inputs, regardless of filename structure, go through `runBatchPipeline()`. The pipeline has seven phases:
 
-1. **Per-file pipeline** — When filenames are informative (e.g., "Show.Name.S01E03.mkv"). Parses filename → probes with ffprobe → searches TMDb → matches individually.
-
-2. **Batch pipeline** — Activated when >70% of files have generic filenames (MakeMKV disc rips like "title_t00.mkv"). The flow is:
-   - `groupFilesBySeason()` — Groups files by directory structure using `parseDirectoryContext()` to extract season/disc from folder names
-   - `identifyShow()` — TMDb search + user confirmation (cached per show name)
-   - `classifyAndSortFiles()` — Sorts by disc*1000+track, classifies as episode/extra/unknown using runtime thresholds relative to expected episode length
-   - `matchSeasonBatch()` — Sequential greedy matcher: walks files and TMDb episodes in order, assigns by runtime proximity, handles multi-episode files, reclassifies poor matches as extras
-   - `matchSpecialsBatch()` — Second pass: unmatched files + extras matched against Season 0 (Specials) by best-fit runtime with dual threshold (absolute ≤15min AND relative ≤20%)
+1. **Phase 1 — Group by season** — `groupFilesBySeason()` groups files by directory structure using `parseDirectoryContext()` to extract show name, season, and disc from folder names.
+2. **Phase 2 — Identify shows** — `identifyShow()` searches TMDb and asks the user to confirm each unique show. Results are cached per show name.
+3. **Phase 3 — DVDCompare lookup** — Searches DVDCompare for sub-second disc runtime data. User selects the matching release. Results are cached per show name.
+4. **Phase 4 — Probe files** — Runs ffprobe on all files in parallel (concurrency 8). Gracefully skips files that fail or if ffprobe is unavailable.
+5. **Phase 5 — Classify + match per season** — `classifyAndSortFiles()` sorts by disc×1000+track and classifies each file as episode/extra/unknown using runtime thresholds. `matchSeasonBatch()` then runs the sequential greedy matcher: walks files and TMDb episodes in order, assigns by runtime proximity, handles multi-episode files, and reclassifies poor matches as extras. Season groups are processed in season-number order so the detected track order from Season 1 propagates as a hint to Season 2.
+6. **Phase 6 — Match specials** — `matchSpecialsBatch()` matches all reclassified extras and unmatched files against TMDb Season 0 (Specials) using a dual threshold (absolute ≤15min AND relative ≤20%).
+7. **Phase 7 — Play All warnings** — Files whose runtime or size significantly exceeds the median of their season group are flagged as potential "Play All" concatenations.
 
 ### Batch Matcher Rules (IMPORTANT)
 
@@ -144,10 +143,9 @@ These rules are critical invariants. Violating them causes incorrect matches and
 
 ### Confidence Scoring
 
-Two scoring systems in `core/scorer.ts`:
+Batch scoring in `core/scorer.ts`:
 
-- `computeConfidence()` — Per-file mode: title similarity (Levenshtein), year match, season/episode match, runtime, probe metadata, search rank. Max 100.
-- `computeBatchConfidence()` / `computeBatchConfidenceBreakdown()` — Batch mode: sequential position (+40) + runtime match (0-60) - multi-episode penalty (-15) - relative runtime penalty (-5/-10). The breakdown variant returns itemized `ConfidenceBreakdownItem[]` stored on `MatchResult.confidenceBreakdown`.
+- `computeBatchConfidence()` / `computeBatchConfidenceBreakdown()` — Sequential position (+40) + runtime match (0–60) - multi-episode penalty (-15) - relative runtime penalty (-5/-10). The breakdown variant returns itemized `ConfidenceBreakdownItem[]` stored on `MatchResult.confidenceBreakdown`.
 
 ### GUI Architecture (Electron + Svelte 5)
 
@@ -181,7 +179,6 @@ If no Electron processes appear, the app is closed. If processes appear, the app
 
 ### Key External Dependencies
 
-- `@ctrl/video-filename-parser` — Parses structured filenames (S01E03 format). Known limitation: drops first episode from 3+ multi-episode chains.
 - `ffprobe` (system binary) — Runtime probing for duration and embedded metadata. Gracefully degrades if not installed.
 
 ### Directory Context Parsing

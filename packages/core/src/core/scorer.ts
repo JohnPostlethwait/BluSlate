@@ -1,5 +1,4 @@
-import { MediaType } from '../types/media.js';
-import type { ParsedFilename, TmdbMatchedItem, ProbeResult, ConfidenceBreakdownItem } from '../types/media.js';
+import type { ConfidenceBreakdownItem } from '../types/media.js';
 import {
   CONFIDENCE_POSITION_POINTS,
   CONFIDENCE_RUNTIME_MAX_POINTS,
@@ -38,71 +37,6 @@ export function normalizedSimilarity(a: string, b: string): number {
   if (maxLen === 0) return 1.0;
   const distance = levenshteinDistance(a, b);
   return 1.0 - distance / maxLen;
-}
-
-export function computeConfidence(
-  parsed: ParsedFilename,
-  probeData: ProbeResult | undefined,
-  tmdbResult: TmdbMatchedItem,
-  fileDurationMinutes: number | undefined,
-): number {
-  let score = 0;
-
-  const titleSim = normalizedSimilarity(
-    parsed.title.toLowerCase(),
-    tmdbResult.name.toLowerCase(),
-  );
-
-  // 1. Title similarity (0-30 points)
-  score += titleSim * 30;
-
-  // 2. Year match (0-20 points)
-  if (parsed.year && tmdbResult.year) {
-    if (parsed.year === tmdbResult.year) {
-      score += 20;
-    } else if (Math.abs(parsed.year - tmdbResult.year) === 1) {
-      score += 10;
-    }
-  } else if (!parsed.year) {
-    // No year to compare; redistribute some weight to title
-    score += titleSim * 10;
-  }
-
-  // 3. Season/Episode match (0-15 points)
-  if (parsed.mediaType === MediaType.TV && parsed.season !== undefined && parsed.episodeNumbers) {
-    if (
-      tmdbResult.seasonNumber === parsed.season &&
-      tmdbResult.episodeNumber !== undefined &&
-      parsed.episodeNumbers.includes(tmdbResult.episodeNumber)
-    ) {
-      score += 15;
-    }
-  }
-
-  // 4. Runtime match (0-20 points)
-  if (fileDurationMinutes !== undefined && tmdbResult.runtime) {
-    const diff = Math.abs(fileDurationMinutes - tmdbResult.runtime);
-    if (diff <= 3) score += 20;
-    else if (diff <= 5) score += 15;
-    else if (diff <= 10) score += 10;
-    else if (diff <= 20) score += 5;
-  } else {
-    // No runtime; redistribute some to title
-    score += titleSim * 10;
-  }
-
-  // 5. Embedded metadata agreement (0-10 points)
-  if (probeData?.title || probeData?.showName) {
-    const probeName = (probeData.showName ?? probeData.title ?? '').toLowerCase();
-    const tmdbName = tmdbResult.name.toLowerCase();
-    const probeSim = normalizedSimilarity(probeName, tmdbName);
-    score += probeSim * 10;
-  }
-
-  // 6. Popularity/search rank bonus (0-5 points)
-  score += Math.max(0, 5 - tmdbResult.searchRank * 2);
-
-  return Math.round(Math.min(100, Math.max(0, score)));
 }
 
 export interface BatchConfidenceBreakdown {
