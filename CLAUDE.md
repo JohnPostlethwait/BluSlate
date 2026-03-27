@@ -183,6 +183,7 @@ If no Electron processes appear, the app is closed. If processes appear, the app
 
 ### Key External Dependencies
 
+- `@ctrl/video-filename-parser` — Parses structured filenames (S01E03 format). Used by `parseFilename()` in `directory-parser.ts` as a season-inference fallback when no season can be extracted from the directory name. Known limitation: drops first episode from 3+ multi-episode chains.
 - `ffprobe` (system binary) — Runtime probing for duration and embedded metadata. Gracefully degrades if not installed.
 
 ### Directory Context Parsing

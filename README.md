@@ -20,7 +20,7 @@ BluSlate solves this by matching files against TMDb episode runtimes instead of 
 - **TMDb integration** — Accurate episode metadata from The Movie Database
 - **[DVDCompare.net](https://www.dvdcompare.net/) integration** — Sub-second disc runtime data for better matching
 - **ffprobe runtime detection** — Probes file durations for matching (gracefully degrades if unavailable)
-- **Confidence scoring** — Each match scored 0–100 based on title similarity, runtime, and position
+- **Confidence scoring** — Each match scored 0–100 based on sequential position and episode runtime
 - **Custom naming templates** — Configurable output format with placeholders
 - **Dry-run mode** — Preview all renames before committing
 - **Undo support** — Reverse renames using a saved manifest
