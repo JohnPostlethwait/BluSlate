@@ -90,10 +90,24 @@ Four packages under `packages/`:
 The core package defines a `UIAdapter` interface (`packages/core/src/types/ui-adapter.ts`) composed of three sub-interfaces:
 
 - `ProgressReporter` — spinner/progress updates (start, update, succeed, fail, stop)
-- `UserPrompter` — user confirmations (confirmRenames, confirmShowIdentification)
+- `UserPrompter` — user confirmations:
+  - `confirmRenames()` — presents match results, lets user review/edit before renaming
+  - `confirmShowIdentification()` — user selects the correct show from TMDb search results
+  - `confirmDvdCompareSelection()` — user selects which DVDCompare disc release(s) to use
 - `DisplayAdapter` — results display (displayResults, displaySummary)
 
 The pipeline (`core/pipeline.ts`) accepts a `UIAdapter` and is completely UI-agnostic. The CLI (`cli/src/ui/cli-adapter.ts`), GUI (`gui/src/main/gui-adapter.ts`), and Web (`web/src/server/web-adapter.ts`) each implement this interface. The GUI adapter bridges via Electron IPC; the Web adapter bridges via Socket.IO request/response patterns.
+
+#### Interactive Editor (CLI only)
+
+`packages/cli/src/ui/editor.ts` powers the interactive correction step inside `confirmRenames`. After matches are shown, CLI users can manually fix mismatches before committing renames:
+
+- `applyEpisodeEdit()` — reassign a file to a different episode number
+- `applySeasonEdit()` — reassign a file to a different season
+- `applySkip()` — exclude a file from the rename run
+- `parseEpisodeInput()` — parses user episode input (single `5`, range `5-7`, zero-padded `05`)
+
+The GUI and Web adapters handle corrections differently (drag-to-reorder, inline editing) and do not use this module.
 
 ### Matching Pipeline
 
@@ -180,6 +194,11 @@ If no Electron processes appear, the app is closed. If processes appear, the app
 - Tests import directly from source: `../../packages/core/src/` or `../../packages/cli/src/`
 - `@bluslate/core` aliased in vitest.config.ts to source for resolution
 - TMDb API calls in tests use vitest mocks (`vi.mock`)
+
+### CLI Subcommands
+
+- `bluslate <directory>` — main rename command (see README for all flags)
+- `bluslate config` — interactive prompt to save a TMDb API key to the config file (`~/.config/bluslate/config.json` on macOS/Linux, `%APPDATA%/bluslate/config.json` on Windows). This is the lowest-priority key source; `TMDB_API_KEY` env var and `--api-key` flag both override it.
 
 ### Key External Dependencies
 

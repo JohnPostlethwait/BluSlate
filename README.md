@@ -86,6 +86,21 @@ bluslate --template '{show_name} {season}x{episode}' /media/tv
 
 **API key resolution order:** `--api-key` flag → `TMDB_API_KEY` env var → config file (`bluslate config`)
 
+### Saving Your API Key
+
+```bash
+bluslate config
+```
+
+Interactively saves your TMDb API key to a config file so you don't need to pass it every time. Stored at `~/.config/bluslate/config.json` (macOS/Linux) or `%APPDATA%\bluslate\config.json` (Windows).
+
+### Undoing Renames
+
+Every successful rename run writes a log to `.bluslate-log.json` in the scanned directory. The **GUI** and **web app** both provide an Undo button that reads this log and restores all files to their original names.
+
+> [!NOTE]
+> Undo is not currently available in the CLI.
+
 ### Docker (self-hosted web app)
 
 Pre-built images are published to [GitHub Container Registry](https://ghcr.io/johnpostlethwait/bluslate) on every release.

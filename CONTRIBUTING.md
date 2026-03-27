@@ -66,6 +66,43 @@ pnpm exec vitest run tests/unit/parser.test.ts
 pnpm run test:watch
 ```
 
+### Test Conventions
+
+- **Location:** all tests live in `tests/unit/`, one file per module
+- **Imports:** import directly from source, not built output:
+  ```ts
+  import { foo } from '../../packages/core/src/core/foo.js';
+  ```
+- **Fixtures:** shared test data lives in `tests/fixtures/`. Add new fixture files there rather than inlining large data structures in test files.
+- **Mocking:** TMDb and DVDCompare API calls must be mocked with `vi.mock`. Never make real network calls in tests.
+- **Naming:** use plain English descriptions — `it('should match episodes sequentially by track order')` not `it('test1')`.
+- **Invariants:** for batch matcher invariants (see CLAUDE.md), name the test after the invariant it enforces so failures are self-describing.
+
+## Contributing
+
+### Branching
+
+Work on a feature branch off `master`. Keep PRs focused — one logical change per PR.
+
+### Commit Messages
+
+Use plain imperative sentences describing the *why*, not just the *what*:
+
+```
+Fix track reversal incorrectly triggering on uniform-runtime shows
+
+Not: "Update batch-matcher.ts"
+```
+
+### Version Bumps
+
+All four `package.json` files must be updated together (root + `packages/core`, `cli`, `gui`, `web`). Release tags must be annotated (lightweight tags do not trigger GitHub Actions):
+
+```bash
+git tag -a v0.x.x <commit> -m "Release v0.x.x"
+git push origin v0.x.x
+```
+
 ## Project Structure
 
 ```
