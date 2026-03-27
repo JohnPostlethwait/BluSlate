@@ -108,4 +108,34 @@ describe('renderTemplate', () => {
     // The "/" in the episode title gets sanitized out
     expect(result).toBe('Stargate Universe - S01E01-02 - Air (1) Air (2).mkv');
   });
+
+  it('should render wide multi-episode range as S02E03-07', () => {
+    const item: TmdbMatchedItem = {
+      id: 1,
+      name: 'Band of Brothers',
+      mediaType: MediaType.TV,
+      seasonNumber: 2,
+      episodeNumber: 3,
+      episodeNumberEnd: 7,
+      searchRank: 0,
+    };
+
+    const result = renderTemplate('{show_name} - S{season}E{episode}', item, '.mkv');
+    expect(result).toBe('Band of Brothers - S02E03-07.mkv');
+  });
+
+  it('should not render range when episodeNumberEnd equals episodeNumber', () => {
+    const item: TmdbMatchedItem = {
+      id: 1,
+      name: 'Test Show',
+      mediaType: MediaType.TV,
+      seasonNumber: 1,
+      episodeNumber: 5,
+      episodeNumberEnd: 5,
+      searchRank: 0,
+    };
+
+    const result = renderTemplate('{show_name} - S{season}E{episode}', item, '.mkv');
+    expect(result).toBe('Test Show - S01E05.mkv');
+  });
 });
