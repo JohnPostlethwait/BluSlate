@@ -8,6 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 * Succinctly answer direct questions
 * Do not take action on direct questions until prompted to do so
 
+## Git & Version Control
+
+* **Never push to origin/master (or any remote) without explicit instruction.** Committing locally is fine; pushing requires the user to say so.
+
 ## Background Tasks
 
 * Only run commands in the background (`run_in_background`) when they are genuinely long-lived (e.g. a dev server that must stay running)
